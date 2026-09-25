@@ -5,7 +5,8 @@ edition = "2024"
 description = "What both bitcoin-vision pipelines stand on: image admission, homography and the ONNX plan runner"
 repository = "https://github.com/penlock-io/llscan"
 license = "MIT OR Apache-2.0"
-include = ["/Cargo.toml", "/src/**/*.rs"]
+publish = false
+include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs"]
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

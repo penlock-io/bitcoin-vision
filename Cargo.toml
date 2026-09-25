@@ -5,6 +5,7 @@ edition = "2024"
 description = "Offline handwritten BIP39 photo recognition with word geometry and decision evidence"
 repository = "https://github.com/penlock-io/llscan"
 license = "MIT OR Apache-2.0"
+publish = false
 include = ["/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE-APACHE", "/README.md", "/src/**/*.rs", "/tests/artifacts.rs", "/examples/scan.rs", "/examples/photos/handwritten.png", "/docs/images/*", "/docs/pipelines/*.md", "/models/*.onnx", "/models/*.calibration", "/models/*.txt", "/models/README.md", "/models/NOTICE", "/models/LICENSE-APACHE"]
 
 # This package is independently buildable outside the research workspace.
