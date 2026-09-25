@@ -5,6 +5,7 @@
 //! by reach, the largest cluster is the phrase, and a small cluster
 //! apart from it is left out, to be put back by hand.
 
+#[cfg(any(test, feature = "research"))]
 use crate::detect::Quad;
 
 use crate::layout::PageLayout;
@@ -15,11 +16,13 @@ pub use crate::layout::{COLUMN_REACH, ROW_REACH};
 pub const APART_AT_MOST: usize = 3;
 
 /// Compatibility entry point; the page pipeline shares an existing layout.
+#[cfg(any(test, feature = "research"))]
 pub fn apart(quads: &[Quad], eligible: &[bool]) -> Vec<bool> {
     apart_in(&PageLayout::new(quads), eligible)
 }
 
 /// Region exclusion using the stage's shared geometric evidence.
+#[cfg(any(test, feature = "research"))]
 pub fn apart_in(layout: &PageLayout, eligible: &[bool]) -> Vec<bool> {
     apart_in_observed(layout, eligible, |_, _| {})
 }

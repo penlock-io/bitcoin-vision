@@ -32,6 +32,9 @@ onnx = ["dep:tract-onnx", "word-extent", "bitcoin-vision-core/onnx"]
 word-extent = []
 scan-profile = []
 extent-experiment = ["word-extent", "scan-profile"]
+# The stages, public one by one, for the research harness that studies them.
+# The published crate and the app never enable it.
+research = []
 bundled-models = ["onnx"]
 # The word sheet as a PDF for printing; reading never needs it.
 print = ["bitcoin-vision-forms/print"]

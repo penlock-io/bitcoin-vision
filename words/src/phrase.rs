@@ -38,6 +38,7 @@ pub use order_support::OrderSupport;
 
 pub use decisions::DecisionTrace;
 pub use evidence::{CellSupport, LabelRead, MatchingRead, OriginalRead, WordEvidence};
+#[cfg(any(test, feature = "research"))]
 pub use labels::label_evidence;
 
 /// Recognition uses only the word box. Improve its geometry, never add a halo.
@@ -511,6 +512,7 @@ pub fn trim_offset(crop: &GrayImage) -> Option<u32> {
 /// grown by `margin` of its height on every side, so a cut `cut` pixels
 /// into the crop sits `cut` less the margin along the frame's writing
 /// direction from the box's leading edge.
+#[cfg(any(test, feature = "research"))]
 pub fn narrowed(quad: &Quad, cut: f32, margin: f32) -> Quad {
     narrowed_in(quad, cut, margin, WritingFrame::Local)
 }
@@ -546,6 +548,7 @@ pub struct Trim {
 /// read as `raw2` (`None` when there was nothing to cut): the box's own
 /// decision, used when the page's numbers make no run to decide by.
 /// The word model never decides; its reads follow the cut.
+#[cfg(any(test, feature = "research"))]
 pub fn trim_decision(raw: &str, raw2: Option<&str>) -> Trim {
     cuts::trim_decision_traced(raw, raw2, &mut None)
 }
@@ -1229,6 +1232,7 @@ pub struct Labelled {
 /// Normal ONNX scans with a recogniser and [`CROP_MARGIN`] include lean E3
 /// expansion. Classifier-only and custom-margin diagnostic reads do not: E3
 /// was measured only with the ordinary recogniser and fixed crop margin.
+#[cfg(any(test, feature = "research"))]
 pub fn read_words(
     photo: &RgbImage,
     quads: &[Quad],
@@ -1285,7 +1289,7 @@ pub fn read_words_baseline_observed(
 }
 
 /// Runs the reviewed E1 arm explicitly; never used by the normal scanner.
-#[cfg(feature = "extent-experiment")]
+#[cfg(all(feature = "extent-experiment", feature = "research"))]
 pub fn read_words_with_extent(
     photo: &RgbImage,
     quads: &[Quad],
@@ -1305,7 +1309,7 @@ pub fn read_words_with_extent(
 }
 
 /// Runs the pre-registered E2 ink-ownership arm; never the normal scanner.
-#[cfg(feature = "extent-experiment")]
+#[cfg(all(feature = "extent-experiment", feature = "research"))]
 pub fn read_words_with_extent_e2(
     photo: &RgbImage,
     quads: &[Quad],
@@ -1325,7 +1329,7 @@ pub fn read_words_with_extent_e2(
 }
 
 /// Runs E3 with explicit component diagnostics; normal scans use lean E3.
-#[cfg(feature = "extent-experiment")]
+#[cfg(all(feature = "extent-experiment", feature = "research"))]
 pub fn read_words_with_extent_e3(
     photo: &RgbImage,
     quads: &[Quad],
@@ -1343,7 +1347,7 @@ pub fn read_words_with_extent_e3(
 
 /// Same E3 decisions, with optional component evidence. Audit::None
 /// avoids collecting detailed witnesses; neither mode constructs report JSON.
-#[cfg(feature = "extent-experiment")]
+#[cfg(all(feature = "extent-experiment", feature = "research"))]
 pub fn read_words_with_extent_e3_audit(
     photo: &RgbImage,
     quads: &[Quad],

@@ -48,3 +48,5 @@ expect_refusal "a phone that prints" "bitcoin-vision-mobile reaches svg2pdf" \
     'sed -i.bak "s|features = \[\"onnx\"\] }|features = [\"onnx\", \"print\"] }|" example-android-app/rust/bitcoin-vision-mobile/Cargo.toml'
 expect_refusal "a switch that turns a pipeline on" "bitcoin-vision reaches penlock-scan" \
     'sed -i.bak "s|^onnx = \[\"bitcoin-vision-words?/onnx\", \"penlock-scan?/onnx\"\]|onnx = [\"bitcoin-vision-words?/onnx\", \"penlock-scan/onnx\"]|" Cargo.toml'
+expect_refusal "a phone with the research surface" "bitcoin-vision-mobile turns on the word pipeline's research surface" \
+    'sed -i.bak "/^bitcoin-vision-words = /s|features = \[\"onnx\"\] }|features = [\"onnx\", \"research\"] }|" example-android-app/rust/bitcoin-vision-mobile/Cargo.toml'

@@ -31,12 +31,15 @@ pub(crate) fn scope_active() -> bool {
 }
 
 #[cfg(feature = "scan-profile")]
+#[cfg(any(test, feature = "research"))]
 pub use active::Scope;
 
 #[cfg(feature = "scan-profile")]
 mod active {
     use super::Kind;
-    use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+    use std::cell::RefCell;
+    #[cfg(any(test, feature = "research"))]
+    use std::{marker::PhantomData, rc::Rc};
 
     struct Limit {
         max: [usize; 2],
@@ -54,8 +57,10 @@ mod active {
 
     /// Hard call budget for one synchronous replay. Not Send/Sync; no nesting.
     /// Keep alive while loading models too, to include constructor probes.
+    #[cfg(any(test, feature = "research"))]
     pub struct Scope(PhantomData<Rc<()>>);
 
+    #[cfg(any(test, feature = "research"))]
     impl Scope {
         /// Starts fresh counters. Refuses an overlapping scope without changing it.
         pub fn new(classifier: usize, ocr: usize) -> Result<Self, String> {
@@ -90,6 +95,7 @@ mod active {
         }
     }
 
+    #[cfg(any(test, feature = "research"))]
     impl Drop for Scope {
         fn drop(&mut self) {
             ACTIVE.with_borrow_mut(|a| *a = None);

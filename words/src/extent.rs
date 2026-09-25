@@ -27,7 +27,7 @@ mod ink_witness;
 pub(crate) enum Arm {
     #[default]
     E1,
-    #[cfg(any(test, feature = "extent-experiment"))]
+    #[cfg(any(test, all(feature = "extent-experiment", feature = "research")))]
     E2,
     E3,
 }
@@ -35,7 +35,7 @@ impl Arm {
     fn label(self) -> &'static str {
         match self {
             Self::E1 => "E1",
-            #[cfg(any(test, feature = "extent-experiment"))]
+            #[cfg(any(test, all(feature = "extent-experiment", feature = "research")))]
             Self::E2 => "E2",
             Self::E3 => "E3",
         }
@@ -58,6 +58,7 @@ pub enum Audit {
 
 /// The ordinary page representation plus experiment-only provenance/choices.
 #[derive(Debug)]
+#[cfg(any(test, feature = "research", feature = "extent-experiment"))]
 pub struct Experiment {
     /// Original observations and selected expansions in the shared traversals.
     pub scan: PageScan,
@@ -111,6 +112,7 @@ impl Report {
     }
 
     /// Number of detailed component witnesses actually retained, not estimated bytes.
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub fn retained_component_witnesses(&self) -> usize {
         self.trials
             .iter()
@@ -123,6 +125,7 @@ impl Report {
     /// Bytes in this typed value and its owned buffer capacities. Excludes
     /// allocator overhead, shared static strings and the separate PageScan.
     /// Unlike serialized length this counts metadata actually retained by lean.
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub fn retained_bytes(&self) -> usize {
         use std::mem::size_of;
         size_of::<Self>()
@@ -151,6 +154,7 @@ impl Report {
     }
 
     /// Original page indices replaced by this expanded word, if any.
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub fn expanded_from(&self, word: usize) -> Option<&[usize]> {
         self.trials
             .iter()
@@ -160,6 +164,7 @@ impl Report {
 
     /// Explicit diagnostic export, never called by the lean mobile scan.
     /// Lean reports omit component evidence; audit exports keep the historical shape.
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub fn to_json(&self) -> Value {
         // Export happens after the scan has returned, so account for it
         // separately from the inclusive extent computation span.
@@ -195,6 +200,7 @@ impl Report {
 
     /// Switches a selected expansion and its complete original interpretation.
     /// Indices/ranks and original crops are unchanged; strays restore losslessly.
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub fn choose_expansion(
         &mut self,
         scan: &mut PageScan,
@@ -824,6 +830,7 @@ impl Read {
         }
     }
 
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     fn json(&self) -> Value {
         json!({"top":self.top,"probability":self.probability,"margin":self.margin,
             "pick":self.pick,"kept":self.kept,"verdict":format!("{:?}",self.verdict).to_lowercase(),

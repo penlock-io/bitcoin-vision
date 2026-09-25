@@ -19,8 +19,8 @@ use bdk_wallet::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::template::{Bip86, DescriptorTemplate};
+use bitcoin_vision_words::Reader;
 use bitcoin_vision_words::detect::Detector;
-use bitcoin_vision_words::phrase::Reader;
 use bitcoin_vision_words::progress::Observer;
 use bitcoin_vision_words::recogniser::{Preparation, Recogniser};
 use bitcoin_vision_words::scan::Outcome as ScanOutcome;
@@ -343,10 +343,10 @@ pub struct WordReading {
     pub expanded_from: Vec<ExtentParent>,
 }
 
-impl TryFrom<&bitcoin_vision_words::phrase::WordBox> for WordReading {
+impl TryFrom<&bitcoin_vision_words::WordBox> for WordReading {
     type Error = VisionError;
 
-    fn try_from(w: &bitcoin_vision_words::phrase::WordBox) -> Result<Self, Self::Error> {
+    fn try_from(w: &bitcoin_vision_words::WordBox) -> Result<Self, Self::Error> {
         let chosen = w
             .pick()
             .and_then(|p| Word::from_index(p as u16))
@@ -491,12 +491,12 @@ pub enum InitialOrder {
     Columns,
 }
 
-impl From<bitcoin_vision_words::phrase::InitialOrder> for InitialOrder {
-    fn from(value: bitcoin_vision_words::phrase::InitialOrder) -> Self {
+impl From<bitcoin_vision_words::InitialOrder> for InitialOrder {
+    fn from(value: bitcoin_vision_words::InitialOrder) -> Self {
         match value {
-            bitcoin_vision_words::phrase::InitialOrder::Numbers => Self::Numbers,
-            bitcoin_vision_words::phrase::InitialOrder::Rows => Self::Rows,
-            bitcoin_vision_words::phrase::InitialOrder::Columns => Self::Columns,
+            bitcoin_vision_words::InitialOrder::Numbers => Self::Numbers,
+            bitcoin_vision_words::InitialOrder::Rows => Self::Rows,
+            bitcoin_vision_words::InitialOrder::Columns => Self::Columns,
         }
     }
 }
@@ -877,7 +877,7 @@ impl PhraseScanner {
 
 fn pack_scan(
     found: bitcoin_vision_words::Found,
-    scan: &bitcoin_vision_words::phrase::PageScan,
+    scan: &bitcoin_vision_words::PageScan,
 ) -> Result<PhraseScan, VisionError> {
     let layout = match found {
         bitcoin_vision_words::Found::Page => Layout::Page,
@@ -1023,7 +1023,7 @@ mod phrase_tests {
 
     #[test]
     fn extent_provenance_and_original_read_material_survive_mobile_packing() {
-        use bitcoin_vision_words::phrase::{ExtentParent as Parent, WordBox};
+        use bitcoin_vision_words::{ExtentParent as Parent, WordBox};
         let mut word = WordBox {
             quad: bitcoin_vision_words::detect::Quad([
                 (10., 20.),
@@ -1109,7 +1109,7 @@ mod phrase_tests {
         word.expanded_from.clear();
         // An unreadable occupied cell remains one uncertain app entry at its
         // geometric position, carrying exactly the native box and read pixels.
-        word.evidence.cell = Some(bitcoin_vision_words::phrase::CellSupport {
+        word.evidence.cell = Some(bitcoin_vision_words::CellSupport {
             column: Some(0),
             row: Some(5),
             ordinal: Some(6),
@@ -1139,7 +1139,7 @@ mod phrase_tests {
         // Trimming is metadata, not another replacement/phrase entry. Each
         // verbatim read survives beside its own pixels through the ABI.
         word.raw.as_mut().unwrap().text = ". Hobby".into();
-        word.evidence.original = Some(bitcoin_vision_words::phrase::OriginalRead {
+        word.evidence.original = Some(bitcoin_vision_words::OriginalRead {
             quad: bitcoin_vision_words::detect::Quad([
                 (0., 20.),
                 (30., 20.),
@@ -1152,21 +1152,19 @@ mod phrase_tests {
                 confidence: 0.8,
             },
         });
-        word.evidence.matching = Some(bitcoin_vision_words::phrase::MatchingRead {
+        word.evidence.matching = Some(bitcoin_vision_words::MatchingRead {
             text: "Hobby".into(),
             original: true,
             removed_prefix_bytes: 2,
         });
-        word.evidence
-            .labels
-            .push(bitcoin_vision_words::phrase::LabelRead {
-                corners: word.quad.0,
-                literal: "9.Hobby".into(),
-                origin: "prefix".into(),
-                ordinal: Some(9),
-                dotted: true,
-                ambiguous: false,
-            });
+        word.evidence.labels.push(bitcoin_vision_words::LabelRead {
+            corners: word.quad.0,
+            literal: "9.Hobby".into(),
+            origin: "prefix".into(),
+            ordinal: Some(9),
+            dotted: true,
+            ambiguous: false,
+        });
         let packed = WordReading::try_from(&word).unwrap();
         assert_eq!(packed.raw, ". Hobby");
         let original = packed.original_ocr.unwrap();

@@ -3,7 +3,8 @@
 //! trimmed, hidden or replaced. Only the link to a returned word is reindexed.
 
 use crate::detect::Quad;
-use crate::split::{EmptySplit, Split, split_quad_accounted};
+pub use crate::split::EmptySplit;
+use crate::split::{Split, split_quad_accounted};
 use image::RgbImage;
 
 /// One segmentation part, independent of its current reading or keep state.

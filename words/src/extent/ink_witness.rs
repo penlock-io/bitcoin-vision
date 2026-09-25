@@ -1,7 +1,9 @@
 //! E2 numeric evidence from the one existing component-label raster.
 //! Neither a size class nor seeding is a semantic claim of safe ownership.
 
-use super::{Component, Quad, Raster, Rect, Value, contains, json};
+use super::{Component, Quad, Raster, Rect, contains};
+#[cfg(any(test, feature = "research", feature = "extent-experiment"))]
+use super::{Value, json};
 
 pub(super) fn area_floor(scale: f32) -> f64 {
     let side = 0.05 * f64::from(scale);
@@ -49,10 +51,12 @@ pub(super) struct Witness {
 }
 
 impl Witness {
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub(super) fn len(&self) -> usize {
         self.components.len()
     }
 
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub(super) fn buffer_bytes(&self) -> usize {
         self.components.capacity() * std::mem::size_of::<Observed>()
     }
@@ -127,6 +131,7 @@ impl Witness {
             .any(|c| !c.seeded && f64::from(c.pixels) >= self.floor)
     }
 
+    #[cfg(any(test, feature = "research", feature = "extent-experiment"))]
     pub(super) fn json(&self) -> Value {
         json!({
             "status": "collected",

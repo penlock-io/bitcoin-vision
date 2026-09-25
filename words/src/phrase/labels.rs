@@ -83,10 +83,12 @@ fn observed(quad: &Quad, literal: &str, origin: &str, label: Label, dotted: bool
 }
 
 /// The shared label geometry owns both old numeric tokens and mandatory dots.
+#[cfg(any(test, feature = "research"))]
 pub fn label_evidence(boxes: &[Candidate]) -> Labelled {
     label_evidence_traced(boxes, false)
 }
 
+#[cfg(any(test, feature = "research"))]
 pub(super) fn label_evidence_traced(boxes: &[Candidate], trace: bool) -> Labelled {
     label_evidence_in(boxes, trace, WritingFrame::Local)
 }

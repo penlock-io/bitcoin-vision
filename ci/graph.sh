@@ -57,5 +57,25 @@ phone="$(reaches --manifest-path example-android-app/rust/Cargo.toml \
     --target aarch64-linux-android -p bitcoin-vision-mobile)"
 refuse "bitcoin-vision-mobile" "$phone" svg2pdf pdf-writer
 
-[ "$fail" = 0 ] && echo "graph.sh: core, forms, two sibling pipelines under one facade, and a phone that does not print"
+# The stages are public only under the word pipeline's `research` feature,
+# which the research harness turns on and nothing that ships may.
+features_of() {
+    cargo tree --locked --edges features --prefix none --invert bitcoin-vision-words "$@" |
+        sed -n 's/^bitcoin-vision-words feature "\([^"]*\)".*/\1/p' | sort -u
+}
+refuse_research() {
+    local what="$1" found="$2"
+    if ! grep -qx onnx <<<"$found"; then
+        echo "graph.sh: could not read the word pipeline's features for $what" >&2
+        fail=1
+    elif grep -qx research <<<"$found"; then
+        echo "graph.sh: $what turns on the word pipeline's research surface" >&2
+        fail=1
+    fi
+}
+refuse_research "bitcoin-vision-mobile" "$(features_of --manifest-path example-android-app/rust/Cargo.toml \
+    --target aarch64-linux-android -p bitcoin-vision-mobile)"
+refuse_research "bitcoin-vision" "$(features_of --target all --all-features -p bitcoin-vision)"
+
+[ "$fail" = 0 ] && echo "graph.sh: core, forms, two sibling pipelines under one facade, a phone that does not print, and no research surface in anything that ships"
 exit "$fail"

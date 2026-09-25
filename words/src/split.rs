@@ -219,6 +219,7 @@ pub fn strip_rules(ink: &mut [Vec<bool>]) {
 /// with the frame; None when the frame is empty. Beyond the photo's
 /// edge is paper, and so is everything outside the polygon. Artificial
 /// paper is excluded from the threshold histogram as well as the ink.
+#[cfg(any(test, feature = "research"))]
 pub fn ink_of(photo: &RgbImage, quad: &Quad) -> Option<(Frame, Vec<Vec<bool>>)> {
     ink_of_accounted(photo, quad)
         .ok()
@@ -525,6 +526,7 @@ pub fn words_of(frame: Frame, ink: &[Vec<bool>], split: Split) -> Vec<Quad> {
 /// The word cut level out of the photo: its frame's box, turned
 /// level, as a grey crop with beyond-the-edge as paper. What the word
 /// model reads.
+#[cfg(any(test, feature = "research"))]
 pub fn level_crop(photo: &RgbImage, quad: &Quad) -> GrayImage {
     level_crop_in(photo, frame_of(quad))
 }
@@ -595,6 +597,7 @@ fn box_only_sampler_excludes_neighbour_ink_in_the_frame_envelope() {
 /// to bottom within a column. A word joins a column when its centre
 /// falls within an existing column's horizontal span; the column's
 /// span grows to hold it.
+#[cfg(any(test, feature = "research"))]
 pub fn reading_order(words: &[Quad]) -> Vec<usize> {
     crate::layout::PageLayout::new(words).column_order()
 }
@@ -603,6 +606,7 @@ pub fn reading_order(words: &[Quad]) -> Vec<usize> {
 /// right within a row. A word joins a row when its centre falls within
 /// the row's vertical span. Pages are written both ways, and geometry
 /// cannot say which, so both orders are offered.
+#[cfg(any(test, feature = "research"))]
 pub fn reading_order_rows(words: &[Quad]) -> Vec<usize> {
     crate::layout::PageLayout::new(words).row_order()
 }

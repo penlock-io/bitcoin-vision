@@ -145,8 +145,8 @@ mod tests {
     use super::*;
     use bitcoin_vision_words::detect::Quad;
     use bitcoin_vision_words::fragments::{Observation, Scale};
+    use bitcoin_vision_words::sources::EmptySplit;
     use bitcoin_vision_words::sources::{Part, Union};
-    use bitcoin_vision_words::split::EmptySplit;
 
     #[test]
     fn geometry_only_and_rescued_sources_keep_distinct_links_through_packing() {

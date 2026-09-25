@@ -1,6 +1,6 @@
 //! Explicit saved-stage transport. No image encoding, recognition or I/O here.
 use crate::{InitialOrder, Layout, PhotoUpSource, PhraseScan, VisionError};
-use bitcoin_vision_words::phrase::PageScan;
+use bitcoin_vision_words::PageScan;
 use bitcoin_vision_words::progress::FinalRegion;
 use serde_json::{Value, json};
 
@@ -106,7 +106,7 @@ pub(crate) fn pack(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision_words::phrase::{DecisionTrace, WordBox};
+    use bitcoin_vision_words::{DecisionTrace, WordBox};
 
     fn fixture() -> PageScan {
         let word = WordBox {
