@@ -5,7 +5,7 @@ use crate::{
     phrase::{PageScan, Reader},
     recogniser::Recogniser,
 };
-use image::{ImageDecoder, RgbImage};
+use image::RgbImage;
 
 /// Borrowed artifacts used to create a reusable scanner. Loading copies no
 /// photos and performs no downloads; model plans own their parsed weights.
@@ -169,79 +169,11 @@ impl Scanner {
 /// pipeline — admit them through here, so a caller cannot reach past the limit
 /// by decoding an image themselves.
 pub fn check_dimensions(width: u32, height: u32) -> Result<(), ScanError> {
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 40_000_000 {
-        return Err(ScanError::Image(
-            "image must contain 1..=40,000,000 pixels".into(),
-        ));
-    }
-    Ok(())
+    bitcoin_vision_core::check_dimensions(width, height).map_err(|e| ScanError::Image(e.0))
 }
 
 /// Decodes canonical RGB pixels with the same limits/orientation as [`Scanner::scan`].
 /// Use this to display the exact coordinate frame associated with returned boxes.
 pub fn decode_image(encoded: &[u8], orientation: Option<u8>) -> Result<RgbImage, ScanError> {
-    if encoded.len() > 64 * 1024 * 1024 {
-        return Err(ScanError::Image("encoded image exceeds64MiB".into()));
-    }
-    if orientation.is_some_and(|v| !(1..=8).contains(&v)) {
-        return Err(ScanError::Image(
-            "orientation must be an EXIF transform in1..=8".into(),
-        ));
-    }
-    let error = |e: image::ImageError| ScanError::Image(e.to_string());
-    let mut reader = image::ImageReader::new(std::io::Cursor::new(encoded))
-        .with_guessed_format()
-        .map_err(|e| ScanError::Image(e.to_string()))?;
-    reader.limits(image::Limits::default());
-    let mut decoder = reader.into_decoder().map_err(error)?;
-    let (width, height) = decoder.dimensions();
-    check_dimensions(width, height)?;
-    let orientation = match orientation {
-        Some(n) => image::metadata::Orientation::from_exif(n).expect("validated EXIF"),
-        None => decoder.orientation().map_err(error)?,
-    };
-    let mut image = image::DynamicImage::from_decoder(decoder).map_err(error)?;
-    image.apply_orientation(orientation);
-    Ok(image.into_rgb8())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn dimensions_are_bounded_before_inference() {
-        assert!(check_dimensions(0, 2).is_err());
-        assert!(check_dimensions(40_000_001, 1).is_err());
-        assert!(check_dimensions(u32::MAX, u32::MAX).is_err());
-        assert!(check_dimensions(5000, 8000).is_ok());
-    }
-    #[test]
-    fn all_exif_transforms_preserve_marker_coordinates() {
-        let original = RgbImage::from_fn(3, 2, |x, y| image::Rgb([(1 + y * 3 + x) as u8, 0, 0]));
-        let mut encoded = std::io::Cursor::new(Vec::new());
-        original
-            .write_to(&mut encoded, image::ImageFormat::Png)
-            .unwrap();
-        let expected: [&[u8]; 8] = [
-            &[1, 2, 3, 4, 5, 6],
-            &[3, 2, 1, 6, 5, 4],
-            &[6, 5, 4, 3, 2, 1],
-            &[4, 5, 6, 1, 2, 3],
-            &[1, 4, 2, 5, 3, 6],
-            &[4, 1, 5, 2, 6, 3],
-            &[6, 3, 5, 2, 4, 1],
-            &[3, 6, 2, 5, 1, 4],
-        ];
-        for n in 1..=8 {
-            let decoded = decode_image(encoded.get_ref(), Some(n)).unwrap();
-            assert_eq!(
-                decoded.pixels().map(|p| p[0]).collect::<Vec<_>>(),
-                expected[n as usize - 1]
-            );
-        }
-        assert_eq!(decode_image(encoded.get_ref(), None).unwrap(), original);
-        assert!(decode_image(encoded.get_ref(), Some(0)).is_err());
-        assert!(decode_image(encoded.get_ref(), Some(9)).is_err());
-        assert!(decode_image(b"invalid", None).is_err());
-    }
+    bitcoin_vision_core::decode_image(encoded, orientation).map_err(|e| ScanError::Image(e.0))
 }

@@ -19,13 +19,29 @@ jobs:
         run: cargo +stable check --locked --no-default-features
       - name: Public documentation
         run: cargo +stable doc --locked --no-deps --features bundled-models
+      # The word crate depends on bitcoin-vision-core, so the two are packaged
+      # together: --workspace builds each against the other's package rather
+      # than a registry neither is in.
       - name: Package builds without sibling repositories
-        run: cargo +stable package --locked
-      # The package excludes the app tree, so a test that reaches into it
-      # passes here and fails for whoever installs the crate.
-      - name: The packaged crate's own tests
-        working-directory: target/package/bitcoin-vision-0.1.0
-        run: cargo +stable test --offline --locked --all-features
+        run: cargo +stable package --locked --workspace
+      # The packages exclude the app tree, so a test that reaches into it
+      # passes here and fails for whoever installs the crate. The word crate's
+      # packaged lock names its core as a registry crate; the patch points it
+      # at the core package just built instead, offline, so nothing else in
+      # the lock can move.
+      - name: The packaged crates' own tests
+        working-directory: target/package
+        run: |
+          (cd bitcoin-vision-core-0.1.0 && cargo +stable test --offline --locked --all-features)
+          cd bitcoin-vision-0.1.0
+          cp Cargo.lock Cargo.lock.packaged
+          cargo +stable test --offline --all-features \
+            --config "patch.crates-io.bitcoin-vision-core.path='../bitcoin-vision-core-0.1.0'"
+          # The patch may drop the core's registry source and checksum and
+          # nothing else: every other package stays exactly as packaged.
+          awk '/^name = /{core = ($0 == "name = \"bitcoin-vision-core\"")}
+               !(core && /^(source|checksum) = /)' Cargo.lock.packaged > Cargo.lock.expected
+          diff Cargo.lock.expected Cargo.lock
 
   # A green run here means the app compiles, its unit tests pass and it
   # packages. It does not mean the app was run: nothing on a hosted runner

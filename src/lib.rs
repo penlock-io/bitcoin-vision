@@ -11,7 +11,8 @@ pub mod dot_grid;
 #[cfg(feature = "word-extent")]
 pub mod extent;
 pub mod fragments;
-pub mod homography;
+/// Re-exported from `bitcoin-vision-core`, which both pipelines depend on.
+pub use bitcoin_vision_core::homography;
 pub mod hybrid;
 pub mod inference_limit;
 pub mod joins;
@@ -24,10 +25,10 @@ mod read_budget;
 pub mod recogniser;
 pub mod region;
 mod repair;
+#[doc(hidden)]
+pub use bitcoin_vision_core::runtime;
 #[cfg(feature = "scan-profile")]
 pub use repair::set_read_workers;
-#[doc(hidden)]
-pub mod runtime;
 pub mod sources;
 pub mod split;
 pub mod timing;

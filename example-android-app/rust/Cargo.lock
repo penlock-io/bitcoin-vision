@@ -302,11 +302,21 @@ name = "bitcoin-vision"
 version = "0.1.0"
 dependencies = [
  "bip39",
+ "bitcoin-vision-core",
  "bitcoin_hashes 0.14.101",
  "image",
  "imageproc",
  "serde",
  "serde_json",
+ "tract-onnx",
+]
+
+[[package]]
+name = "bitcoin-vision-core"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "imageproc",
  "tract-onnx",
 ]
 
