@@ -89,9 +89,9 @@ for strip in result.document().observations {
 
 `scan` takes encoded bytes and applies EXIF orientation once; `scan_rgb` takes
 canonical pixels. `scan_all` reads every strip on an uncut sheet. Decoding and
-its limits — 64 MiB encoded, 40 million pixels — are the word-list pipeline's
-`decode_image`, so both read the same files the same way rather than each
-carrying its own decoder. `document()` projects decisions already made; it does
+its limits — 64 MiB encoded, 40 million pixels — are `bitcoin-vision-core`'s
+`decode_image`, so both pipelines read the same files the same way rather than
+each carrying its own decoder. `document()` projects decisions already made; it does
 not rectify or reclassify anything.
 
 The model is `penlock-scan/models/cell-reference.onnx`; it lives with

@@ -70,6 +70,15 @@ pub struct Scanner {
 }
 
 impl Scanner {
+    /// Loads the cell classifier compiled into the crate under
+    /// `bundled-models`: `models/cell-reference.onnx`, and nothing else.
+    #[cfg(feature = "bundled-models")]
+    pub fn bundled() -> Result<Self, ScanError> {
+        Self::new(ModelBytes {
+            cells: include_bytes!("../models/cell-reference.onnx"),
+        })
+    }
+
     /// Loads the cell classifier from bytes the caller supplies. On a phone
     /// the model ships inside the app rather than at a filesystem path.
     #[cfg(feature = "onnx")]
@@ -88,7 +97,7 @@ impl Scanner {
 
     /// Decodes JPEG, PNG or WebP and applies EXIF orientation exactly once,
     /// then reads the one strip in the photograph. Limits and decoding are the
-    /// word-list pipeline's, so both read the same files the same way.
+    /// core's, so both pipelines read the same files the same way.
     pub fn scan(&self, encoded: &[u8], options: ScanOptions) -> Result<ScanResult, ScanError> {
         self.scan_rgb(&decode(encoded, options)?, options)
     }

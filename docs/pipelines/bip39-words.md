@@ -59,10 +59,11 @@ candidate — not that its support was zero.
 
 ## Where it lives
 
-The root `bitcoin-vision` crate: `Scanner::bundled()` loads the five bundled
-artifacts, `scan` takes encoded bytes and `scan_rgb` takes canonical pixels,
-and `ScanResult::document()` is a serializable projection of decisions already
-made — it does not re-run inference or re-assign boxes.
+`bitcoin-vision-words`, and `bitcoin_vision::words` on the facade:
+`Scanner::bundled()` loads the five bundled artifacts, `scan` takes encoded
+bytes and `scan_rgb` takes canonical pixels, and `ScanResult::document()` is a
+serializable projection of decisions already made — it does not re-run
+inference or re-assign boxes.
 
 The models are in [`words/models/`](../../words/models/README.md) with their digests.
 

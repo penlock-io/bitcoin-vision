@@ -18,8 +18,10 @@ jobs:
       # that does not.
       - name: The Penlock pipeline on its own default features
         run: cargo +stable test --locked -p penlock-scan --tests
-      - name: Example renderer
+      - name: The word pipeline's example
         run: cargo +stable test --locked -p bitcoin-vision-words --features bundled-models --example scan
+      - name: The Penlock pipeline's example
+        run: cargo +stable test --locked -p penlock-scan --features bundled-models --example scan
       - name: No-runtime API
         run: cargo +stable check --locked -p bitcoin-vision-words --no-default-features
       # The facade forwards its switches without turning a pipeline on, so

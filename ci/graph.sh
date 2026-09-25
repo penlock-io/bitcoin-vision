@@ -50,7 +50,7 @@ refuse "penlock" "$(reaches --target all --all-features -p penlock)" \
 
 # The facade's shared switches forward to whichever pipelines are on and
 # turn neither on themselves.
-refuse "bitcoin-vision" "$(reaches --target all --no-default-features --features onnx,print -p bitcoin-vision)" \
+refuse "bitcoin-vision" "$(reaches --target all --no-default-features --features onnx,print,bundled-models -p bitcoin-vision)" \
     bitcoin-vision-words penlock-scan
 
 phone="$(reaches --manifest-path example-android-app/rust/Cargo.toml \

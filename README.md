@@ -8,10 +8,10 @@ no network anywhere in the pipeline.
 
 It is two model pipelines and the Rust that runs them.
 
-| Pipeline | Reads | Models |
-| --- | --- | --- |
-| [Penlock shares](docs/pipelines/penlock-shares.md) | a cut worksheet strip: twelve rows of six GF(29) symbols, with the identity code that says which share it is | `cell-reference.onnx`, a 29-way cell classifier |
-| [BIP39 word lists](docs/pipelines/bip39-words.md) | a handwritten English recovery phrase, numbered or not, in any column layout | `word-detector.onnx`, `text-recogniser.onnx` and its dictionary, `word-reference.onnx` and its calibration |
+| Pipeline | Reads | Models | Crate and example |
+| --- | --- | --- | --- |
+| [Penlock shares](docs/pipelines/penlock-shares.md) | a cut worksheet strip: twelve rows of six GF(29) symbols, with the identity code that says which share it is | `cell-reference.onnx`, a 29-way cell classifier | `penlock-scan`, [`examples/scan.rs`](penlock-scan/examples/scan.rs) |
+| [BIP39 word lists](docs/pipelines/bip39-words.md) | a handwritten English recovery phrase, numbered or not, in any column layout | `word-detector.onnx`, `text-recogniser.onnx` and its dictionary, `word-reference.onnx` and its calibration | `bitcoin-vision-words`, [`examples/scan.rs`](words/examples/scan.rs) |
 
 Each linked document describes that pipeline's stages, what it returns and
 where it fails. Neither is the point of the repository; they are what it has.
@@ -44,6 +44,35 @@ fingerprint and which strips made it out.
 The implementation is `penlock-scan` (photograph to symbols) and `penlock` (the
 arithmetic, and the wheel the paper version is). Both are plain Rust crates in this repository.
 [How it works](docs/pipelines/penlock-shares.md).
+
+## Using the share library
+
+`bitcoin_vision::penlock` is `penlock-scan`. With `bundled-models` it embeds
+`cell-reference.onnx`; otherwise `Scanner::new(ModelBytes { cells })` takes the
+classifier's bytes.
+
+```rust,no_run
+use bitcoin_vision::penlock::{ScanOptions, Scanner};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let scanner = Scanner::bundled()?;
+let photo = std::fs::read("share-strip.jpg")?;
+for strip in scanner.scan_all(&photo, ScanOptions::default())?.document().observations {
+    // strip.kind, strip.share, strip.quad, strip.confidence, strip.text,
+    // and strip.words: twelve words of six cells, each with its probability
+}
+# Ok(())
+# }
+```
+
+The example needs no photograph to show the whole round trip. Run bare, it
+splits the BIP39 test phrase into three shares, draws shares 1 and 3 on
+worksheet strips, reads both drawings back and recovers the phrase from what
+it read; given a photograph, it prints every strip it finds:
+
+```sh
+cargo run --release -p penlock-scan --features bundled-models --example scan -- [photo.jpg]
+```
 
 ## BIP39 word lists
 
@@ -100,7 +129,8 @@ For externally managed model files, use `Scanner::new(ModelBytes { .. })`.
 The five artifact fields are detector, classifier, calibration, recogniser and
 dictionary. Classifier calibration is checked against the model digest and
 preprocessing contract. The default build enables ONNX but does not embed model
-bytes; `bundled-models` embeds the files included in this repository.
+bytes; `bundled-models` embeds the five files in `words/models/`, and on the
+facade it embeds whichever pipelines' models are switched on.
 
 ## See the result
 
@@ -177,14 +207,16 @@ and no wallet is created, restored or contacted by these crates.
 Project code and project-authored models are available under either
 [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE), at your choice.
 The [Paddle/RapidOCR models](words/models/README.md) remain **Apache-2.0-only**;
-retain their license and attribution when redistributing them. Dependencies
-and the Android app's fonts retain their own licenses and notices.
+retain their license and attribution when redistributing them. Dependencies,
+and the fonts in `forms/fonts` under the SIL Open Font License, retain their
+own licenses and notices.
 
 ## Build and test
 
 ```sh
 cargo test --locked --workspace --all-features
 cargo test --locked -p bitcoin-vision-words --features bundled-models --example scan
+cargo test --locked -p penlock-scan --features bundled-models --example scan
 cargo check --locked --no-default-features
 cargo doc --locked --no-deps --features bundled-models
 ```

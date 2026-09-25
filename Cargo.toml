@@ -26,7 +26,8 @@ penlock = ["dep:penlock-scan"]
 onnx = ["bitcoin-vision-words?/onnx", "penlock-scan?/onnx"]
 # PDF output for whichever pipelines' forms are on.
 print = ["bitcoin-vision-words?/print", "penlock-scan?/print"]
-bundled-models = ["words", "bitcoin-vision-words/bundled-models"]
+# Each pipeline that is on embeds its own models; see each crate.
+bundled-models = ["bitcoin-vision-words?/bundled-models", "penlock-scan?/bundled-models"]
 word-extent = ["words", "bitcoin-vision-words/word-extent"]
 scan-profile = ["words", "bitcoin-vision-words/scan-profile"]
 extent-experiment = ["words", "bitcoin-vision-words/extent-experiment"]
