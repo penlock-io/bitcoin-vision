@@ -10,7 +10,7 @@ include = ["/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE-APACHE", "/README
 
 # This package is independently buildable outside the research workspace.
 [workspace]
-members = ["core", "forms"]
+members = ["core", "forms", "penlock", "penlock-scan"]
 exclude = ["example-android-app/rust"]
 
 [dependencies]

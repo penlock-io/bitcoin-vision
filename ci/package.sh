@@ -51,13 +51,14 @@ done
 # A packaged lock names this workspace's other crates as registry crates; the
 # patches point them at the packages just built instead, and may drop those
 # entries' registry source and checksum and nothing else.
-siblings="bitcoin-vision-core bitcoin-vision-forms"
+siblings="bitcoin-vision-core bitcoin-vision-forms penlock"
 test_on_siblings() {
     (
         cd "$1"
         cp Cargo.lock Cargo.lock.packaged
         patches=()
         for sibling in $siblings; do
+            grep -qx "name = \"$sibling\"" Cargo.lock || continue
             patches+=(--config "patch.crates-io.$sibling.path='../$sibling-0.1.0'")
         done
         cargo test --offline --all-features "${patches[@]}"
@@ -68,4 +69,6 @@ test_on_siblings() {
 }
 test_on_siblings bitcoin-vision-forms-0.1.0
 test_on_siblings bitcoin-vision-0.1.0
+test_on_siblings penlock-0.1.0
+test_on_siblings penlock-scan-0.1.0
 echo "package.sh: every crate packages, carries its licences, and passes its own tests"

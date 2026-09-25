@@ -41,9 +41,8 @@ animation does, because how long an emulator takes over a photograph is not
 what is being shown. The recovered phrase never appears: two shares in, a key
 fingerprint and which strips made it out.
 
-The implementation is `example-android-app/rust/penlock-scan` (photograph to
-symbols) and `example-android-app/rust/penlock` (the arithmetic, and the wheel
-the paper version is). Both are plain Rust crates in this repository.
+The implementation is `penlock-scan` (photograph to symbols) and `penlock` (the
+arithmetic, and the wheel the paper version is). Both are plain Rust crates in this repository.
 [How it works](docs/pipelines/penlock-shares.md).
 
 ## BIP39 word lists

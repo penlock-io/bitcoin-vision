@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["penlock", "penlock-scan", "bitcoin-vision-mobile"]
+members = ["bitcoin-vision-mobile"]
 
 [workspace.package]
 edition = "2024"

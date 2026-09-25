@@ -1,19 +1,20 @@
 [package]
 name = "penlock-scan"
 version = "0.1.0"
-description = "Share-card and registered-sheet support for the full Android example"
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+description = "Read Penlock share strips from photos: find each strip, tell which one it is, and read its cells"
+edition = "2024"
+repository = "https://github.com/penlock-io/llscan"
+license = "MIT OR Apache-2.0"
 publish = false
+include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/tests/*.rs", "/models/cell-reference.onnx", "/models/README.md"]
 
 [dependencies]
-bitcoin-vision-core = { path = "../../../core" }
-bitcoin-vision-forms = { path = "../../../forms" }
+bitcoin-vision-core = { path = "../core", version = "0.1.0" }
+bitcoin-vision-forms = { path = "../forms", version = "0.1.0" }
 bitcoin_hashes = "0.14"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 imageproc = { version = "0.27", default-features = false }
-penlock = { path = "../penlock" }
+penlock = { path = "../penlock", version = "0.1.0" }
 rand = { version = "0.9", default-features = false, features = ["std_rng"] }
 tract-onnx = { version = "0.23", optional = true }
 serde = { version = "1", features = ["derive"] }

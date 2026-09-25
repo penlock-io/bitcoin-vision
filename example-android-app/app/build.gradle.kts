@@ -76,7 +76,7 @@ val uniffiBindings = tasks.register<Exec>("uniffiBindings") {
         layout.buildDirectory.dir("generated/uniffi").get().asFile.absolutePath)
 }
 val copyModels = tasks.register<Copy>("copyModels") {
-    from(rootDir.resolve("app-models/cell-reference.onnx"))
+    from(scannerRoot.resolve("penlock-scan/models/cell-reference.onnx"))
     for (name in listOf("word-detector.onnx", "word-reference.onnx", "word-reference.calibration",
         "text-recogniser.onnx", "text-recogniser.dict.txt")) {
         from(scannerRoot.resolve("models/$name"))

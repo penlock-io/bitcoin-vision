@@ -134,7 +134,7 @@ fn pixels_the_caller_decoded_meet_the_same_limits() {
 #[test]
 fn the_shipped_classifier_loads_from_bytes() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../app-models/cell-reference.onnx");
+        .join("models/cell-reference.onnx");
     let scanner = Scanner::new(penlock_scan::ModelBytes {
         cells: &std::fs::read(path).unwrap(),
     })

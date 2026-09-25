@@ -67,9 +67,8 @@ reports the correction rather than applying it silently.
 
 ## Where it lives
 
-`example-android-app/rust/penlock-scan` owns the photograph-to-symbols half
-(`locate`, `cells`, `model`, `scan`), and `example-android-app/rust/penlock`
-owns the arithmetic (`split`, `recover`, `verify`, and the wheel the paper
+`penlock-scan` owns the photograph-to-symbols half (`locate`, `cells`, `model`,
+`scan`), and `penlock` owns the arithmetic (`split`, `recover`, `verify`, and the wheel the paper
 version is). Both are plain Rust crates. `penlock-scan` also renders
 worksheets and strips (`sheet`, `template`) on `bitcoin-vision-forms`, which is
 how the test fixtures are made.
@@ -95,9 +94,9 @@ its limits — 64 MiB encoded, 40 million pixels — are the word-list pipeline'
 carrying its own decoder. `document()` projects decisions already made; it does
 not rectify or reclassify anything.
 
-The model is `example-android-app/app-models/cell-reference.onnx`; it belongs
-to the app's workspace because `penlock-scan` is what loads it. The root
-`bitcoin-vision` crate does not expose this pipeline.
+The model is `penlock-scan/models/cell-reference.onnx`; it lives with
+`penlock-scan` because that is what loads it. The word pipeline,
+`bitcoin-vision`, does not depend on this one.
 
 ## Limits
 
