@@ -199,6 +199,7 @@ impl Rollup {
                                 id: b.id,
                                 quad: b.quad.clone(),
                                 state: RegionState::Read,
+                                reading: None,
                             },
                         )
                     })
@@ -279,6 +280,7 @@ mod tests {
             id,
             quad: quad(id as f32),
             state,
+            reading: None,
         }
     }
 

@@ -287,7 +287,7 @@ impl Input {
     }
 
     #[cfg(test)]
-    pub(crate) fn prepare_with<T: Send>(
+    pub(crate) fn prepare_with<T: Send + crate::progress::Provisional>(
         &self,
         budget: &mut Budget,
         margin: f32,
@@ -350,7 +350,7 @@ impl Input {
     /// A read that fails does not cancel a read at a lower index, so the
     /// failure reported is the lowest-index one however the passes are
     /// scheduled.
-    pub(crate) fn prepare_reserved_with<T: Send>(
+    pub(crate) fn prepare_reserved_with<T: Send + crate::progress::Provisional>(
         &self,
         traversal: Traversal,
         budget: &mut Budget,
@@ -413,7 +413,7 @@ struct Pass<T> {
     failure: Option<(usize, String)>,
 }
 
-impl<T> Pass<T> {
+impl<T: crate::progress::Provisional> Pass<T> {
     fn new(len: usize) -> Self {
         Self {
             out: (0..len).map(|_| None).collect(),
@@ -450,8 +450,8 @@ impl<T> Pass<T> {
     ) {
         match result {
             Ok(value) => {
+                progress.read(index, shown, || value.reading());
                 self.out[index] = Some(value);
-                progress.region(index, shown, RegionState::Read);
                 self.delivered += 1;
                 progress.read_done(self.delivered);
             }
@@ -547,7 +547,7 @@ fn effective_workers(requested: usize, reads: usize) -> usize {
 /// delivered count never goes backwards, while two reads are genuinely running
 /// beside each other. Which word is announced when is not fixed, and is not
 /// meant to be.
-fn read_at_once<T: Send>(
+fn read_at_once<T: Send + crate::progress::Provisional>(
     workers: usize,
     ordinary: &[(usize, &Quad)],
     pass: &mut Pass<T>,
@@ -662,17 +662,7 @@ pub(crate) fn unions(
             outcome.reason = reason;
         } else {
             progress.region(parent, &original.quad, RegionState::Reading);
-            let restore = |progress: &Stage<'_>| {
-                progress.region(
-                    parent,
-                    &original.quad,
-                    if original.stray {
-                        RegionState::Excluded
-                    } else {
-                        RegionState::Read
-                    },
-                )
-            };
+            let restore = |progress: &Stage<'_>| progress.settled(parent, original);
             let mut candidate = match read(quad, budget) {
                 Ok(candidate) => candidate,
                 Err(error) => {
@@ -720,7 +710,7 @@ pub(crate) fn unions(
                 union_comparisons,
             );
             if selected {
-                progress.replaced(&candidate.quad, &[parent]);
+                progress.replaced(&candidate, &[parent]);
                 scan.words[parent].set_stray_recorded(
                     true,
                     "fragment_union",
@@ -728,7 +718,7 @@ pub(crate) fn unions(
                 );
             } else {
                 candidate.set_stray_recorded(true, "fragment_union", reason);
-                progress.alternative(&candidate.quad);
+                progress.alternative(&candidate);
             }
             scan.words.push(candidate);
             outcome = Union {

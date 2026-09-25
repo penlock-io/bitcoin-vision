@@ -192,6 +192,8 @@ pub struct WordRegion {
     pub quad: crate::detect::Quad,
     /// How far its reading has got.
     pub state: crate::progress::RegionState,
+    /// What it was provisionally read as, once read. Word text.
+    pub reading: Option<crate::progress::Reading>,
 }
 
 impl Pipeline for Words {
@@ -330,6 +332,7 @@ impl crate::progress::Observer for Recorder<'_> {
                 region: WordRegion {
                     quad: r.quad,
                     state: r.state,
+                    reading: r.reading,
                 },
             },
             Event::Replaced { region, parents } => Delta::Replaced {
@@ -337,6 +340,7 @@ impl crate::progress::Observer for Recorder<'_> {
                 region: WordRegion {
                     quad: region.quad,
                     state: region.state,
+                    reading: region.reading,
                 },
                 parents,
             },

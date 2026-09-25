@@ -823,6 +823,7 @@ mod tests {
             id: 12,
             quad: bitcoin_vision_words::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
             state: core::RegionState::Read,
+            reading: None,
         };
         let update = ScanProgressUpdate::from(core::Event::Replaced {
             region: region.clone(),
@@ -851,5 +852,26 @@ mod tests {
             .state,
             ScanRegionState::Excluded
         );
+    }
+
+    /// The native record holds each region's reading, and the phone's stream
+    /// is a projection of it that must carry no word text: a phrase's words
+    /// are its secret, and the stream crosses the FFI while the scan runs.
+    #[test]
+    fn a_region_crosses_to_the_phone_without_its_reading() {
+        let region = core::Region {
+            id: 3,
+            quad: bitcoin_vision_words::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
+            state: core::RegionState::Read,
+            reading: Some(bitcoin_vision_words::progress::Reading {
+                candidates: vec![(0, 0.97)],
+                text: Some("abandon".into()),
+                turned: false,
+                decisions: Some(serde_json::json!({"literal": "abandon"})),
+            }),
+        };
+        let crossed = format!("{:?}", ScanRegion::from(region));
+        assert!(!crossed.contains("abandon"), "{crossed}");
+        assert!(!crossed.contains("0.97"), "{crossed}");
     }
 }

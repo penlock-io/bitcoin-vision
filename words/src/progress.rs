@@ -46,6 +46,64 @@ pub struct Region {
     pub quad: Quad,
     /// Processing state, independent of confidence and user checks.
     pub state: RegionState,
+    /// What the region was provisionally read as, once it has been read.
+    /// Later passes can still revise it; the result has the final word.
+    pub reading: Option<Reading>,
+}
+
+/// A region's provisional reading. This is word text: a projection that must
+/// not carry text drops it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reading {
+    /// The most probable word-list indices with their probabilities, most
+    /// probable first, at most [`Reading::CANDIDATES`] of them.
+    pub candidates: Vec<(usize, f32)>,
+    /// What the recogniser read, literally.
+    pub text: Option<String>,
+    /// Whether the crop was read turned half round.
+    pub turned: bool,
+    /// The decisions behind the reading, when the scan records them.
+    pub decisions: Option<serde_json::Value>,
+}
+
+impl Reading {
+    /// Candidates kept per reading: enough to inspect a read, where the full
+    /// ranking over every word would make each one kilobytes.
+    pub const CANDIDATES: usize = 5;
+
+    pub(crate) fn of(word: &crate::phrase::WordBox) -> Reading {
+        Reading::from_parts(
+            &word.ranked,
+            word.raw.as_ref(),
+            word.turned,
+            word.evidence.decisions.as_ref(),
+        )
+    }
+
+    pub(crate) fn from_parts(
+        ranked: &[(usize, f32)],
+        read: Option<&crate::recogniser::LineRead>,
+        turned: bool,
+        decisions: Option<&crate::phrase::DecisionTrace>,
+    ) -> Reading {
+        Reading {
+            candidates: ranked.iter().take(Self::CANDIDATES).copied().collect(),
+            text: read.map(|r| r.text.clone()),
+            turned,
+            decisions: decisions.map(|d| d.to_json()),
+        }
+    }
+}
+
+/// What a pass that reads regions can say about one read it finished.
+pub(crate) trait Provisional {
+    fn reading(&self) -> Option<Reading>;
+}
+
+impl Provisional for () {
+    fn reading(&self) -> Option<Reading> {
+        None
+    }
 }
 
 /// Identity map computed alongside the stage's existing final reindexing.
@@ -191,13 +249,49 @@ impl<'a> Stage<'a> {
 
     /// Emit a field's geometry/state using its stable identity.
     pub fn region(&self, index: usize, quad: &Quad, state: RegionState) {
+        self.announce(index, quad, state, || None);
+    }
+
+    fn announce(
+        &self,
+        index: usize,
+        quad: &Quad,
+        state: RegionState,
+        reading: impl FnOnce() -> Option<Reading>,
+    ) {
         emit(self.observer, || {
             Event::Region(Region {
                 id: self.id_at(index),
                 quad: quad.clone(),
                 state,
+                reading: reading(),
             })
         });
+    }
+
+    /// A region shown at `quad` has been read.
+    pub(crate) fn read(
+        &self,
+        index: usize,
+        quad: &Quad,
+        reading: impl FnOnce() -> Option<Reading>,
+    ) {
+        self.announce(index, quad, RegionState::Read, reading);
+    }
+
+    /// A read word, announced as read.
+    pub(crate) fn read_word(&self, index: usize, word: &crate::phrase::WordBox) {
+        self.read(index, &word.quad, || Some(Reading::of(word)));
+    }
+
+    /// A read word, announced as read or, if it is set aside, excluded.
+    pub(crate) fn settled(&self, index: usize, word: &crate::phrase::WordBox) {
+        let state = if word.stray {
+            RegionState::Excluded
+        } else {
+            RegionState::Read
+        };
+        self.announce(index, &word.quad, state, || Some(Reading::of(word)));
     }
 
     fn id_at(&self, index: usize) -> RegionId {
@@ -293,11 +387,11 @@ impl<'a> Stage<'a> {
 
     // Called exactly where a successful union is appended. Rejected trials
     // never allocate a region or replace parents.
-    pub(crate) fn joined(&mut self, quad: &Quad, parents: [usize; 2]) {
-        self.replaced(quad, &parents);
+    pub(crate) fn joined(&mut self, word: &crate::phrase::WordBox, parents: [usize; 2]) {
+        self.replaced(word, &parents);
     }
 
-    pub(crate) fn alternative(&mut self, quad: &Quad) {
+    pub(crate) fn alternative(&mut self, word: &crate::phrase::WordBox) {
         if let Some(observer) = self.observer {
             let id = self.next_id;
             self.next_id += 1;
@@ -307,8 +401,9 @@ impl<'a> Stage<'a> {
             });
             observer.on_event(Event::Region(Region {
                 id,
-                quad: quad.clone(),
+                quad: word.quad.clone(),
                 state: RegionState::Excluded,
+                reading: Some(Reading::of(word)),
             }));
         }
     }
@@ -316,7 +411,7 @@ impl<'a> Stage<'a> {
     // A singleton expansion and a pair union both replace overlays, without
     // conflating their separate result provenance. Parents are CURRENT word
     // indices, which can differ from IDs after an earlier owner's reindex.
-    pub(crate) fn replaced(&mut self, quad: &Quad, parents: &[usize]) {
+    pub(crate) fn replaced(&mut self, word: &crate::phrase::WordBox, parents: &[usize]) {
         if let Some(observer) = self.observer {
             let id = self.next_id;
             self.next_id += 1;
@@ -328,8 +423,9 @@ impl<'a> Stage<'a> {
             observer.on_event(Event::Replaced {
                 region: Region {
                     id,
-                    quad: quad.clone(),
+                    quad: word.quad.clone(),
                     state: RegionState::Read,
+                    reading: Some(Reading::of(word)),
                 },
                 parents,
             });
@@ -417,9 +513,9 @@ mod tests {
                 .unwrap()
                 .contains(&Event::Removed { id: 2 })
         );
-        stage.alternative(&q);
+        stage.alternative(&crate::phrase::WordBox::read_at(q.clone()));
         assert_eq!(stage.id_at(2), 3);
-        stage.replaced(&q, &[0, 1]);
+        stage.replaced(&crate::phrase::WordBox::read_at(q.clone()), &[0, 1]);
         assert_eq!(stage.id_at(3), 4);
     }
 
@@ -485,7 +581,7 @@ mod tests {
         let mut absent = Stage::new(None, 500);
         let quad = Quad([(0., 0.); 4]);
         absent.region(499, &quad, RegionState::Reading);
-        absent.joined(&quad, [100, 499]);
+        absent.joined(&crate::phrase::WordBox::read_at(quad.clone()), [100, 499]);
         absent.reindex(&[]); // No index lookup/allocation when unobserved.
         assert_eq!(absent.regions.capacity(), 0);
     }

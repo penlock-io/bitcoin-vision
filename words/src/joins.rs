@@ -255,20 +255,11 @@ pub(crate) fn apply(
         if selected {
             scan.words[a].set_stray_recorded(true, "row_join", "selected_replacement");
             scan.words[b].set_stray_recorded(true, "row_join", "selected_replacement");
-            progress.joined(&joined.quad, [a, b]);
+            progress.joined(&joined, [a, b]);
             scan.words.push(joined);
         } else {
             for i in [a, b] {
-                let word = &scan.words[i];
-                progress.region(
-                    i,
-                    &word.quad,
-                    if word.stray {
-                        RegionState::Excluded
-                    } else {
-                        RegionState::Read
-                    },
-                );
+                progress.settled(i, &scan.words[i]);
             }
         }
     }

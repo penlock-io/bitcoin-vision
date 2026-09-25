@@ -86,6 +86,13 @@ fn a_scan_followed_from_another_thread_misses_nothing_and_ends_once() {
         "phases arrive in order, each once: {phases:?}"
     );
 
+    // A reading is inspectable while the scan runs, not only in its result.
+    let first_reading = polled
+        .iter()
+        .position(|d| matches!(d, Delta::Region { region, .. } if region.reading.is_some()))
+        .expect("some region is recorded with its reading");
+    assert!(first_reading < polled.len() - 1);
+
     let mut folded = Snapshot::<Words>::default();
     for delta in &polled {
         folded.apply(delta);
@@ -110,6 +117,17 @@ fn a_scan_followed_from_another_thread_misses_nothing_and_ends_once() {
             .values()
             .all(|r| r.state != RegionState::Reading)
     );
+    for region in snapshot.regions.values() {
+        if region.state == RegionState::Read {
+            let reading = region
+                .reading
+                .as_ref()
+                .expect("a read region has its reading");
+            assert!(
+                reading.candidates.len() <= bitcoin_vision_words::progress::Reading::CANDIDATES
+            );
+        }
+    }
 }
 
 #[test]

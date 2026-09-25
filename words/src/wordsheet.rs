@@ -523,15 +523,7 @@ pub fn read_with_observed(
             serde_json::json!({"rule":"worksheet_layout","status":"evaluated",
                 "field":i,"reason":"registered field; no freeform label, region or replacement passes"})
         });
-        progress.region(
-            i,
-            &word.quad,
-            if word.stray {
-                RegionState::Excluded
-            } else {
-                RegionState::Read
-            },
-        );
+        progress.settled(i, &word);
         progress.read_done(i + 1);
         words.push(word);
     }

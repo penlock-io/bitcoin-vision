@@ -960,16 +960,7 @@ fn apply_with(
             // must not leave the original overlays in a reading state.
             let restore = |progress: &Stage<'_>| {
                 for &p in &t.parents {
-                    let w = &scan.words[p];
-                    progress.region(
-                        p,
-                        &w.quad,
-                        if w.stray {
-                            RegionState::Excluded
-                        } else {
-                            RegionState::Read
-                        },
-                    );
+                    progress.settled(p, &scan.words[p]);
                 }
             };
             let mut candidate = match result {
@@ -1021,7 +1012,7 @@ fn apply_with(
                 }
                 t.selected = Some(scan.words.len());
                 t.active = true;
-                progress.replaced(&candidate.quad, &t.parents);
+                progress.replaced(&candidate, &t.parents);
                 scan.words.push(candidate);
                 selected.push(g.footprint.as_ref().unwrap().clone());
             }

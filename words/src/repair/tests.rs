@@ -1230,3 +1230,15 @@ fn no_inference_starts_on_any_reading_thread_once_the_scan_is_cancelled() {
         );
     }
 }
+
+impl crate::progress::Provisional for String {
+    fn reading(&self) -> Option<crate::progress::Reading> {
+        None
+    }
+}
+
+impl crate::progress::Provisional for usize {
+    fn reading(&self) -> Option<crate::progress::Reading> {
+        None
+    }
+}

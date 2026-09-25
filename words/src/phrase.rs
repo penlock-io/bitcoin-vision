@@ -171,6 +171,35 @@ pub struct WordBox {
     pub expanded_from: Vec<ExtentParent>,
 }
 
+#[cfg(test)]
+impl WordBox {
+    /// A word read at `quad` as the first word on the list, for tests that
+    /// need a read word and care only where it is.
+    pub(crate) fn read_at(quad: Quad) -> WordBox {
+        WordBox {
+            quad,
+            crop: GrayImage::new(1, 1),
+            ranked: vec![(0, 0.97), (1, 0.03)],
+            selection: None,
+            column_rank: 0,
+            row_rank: 0,
+            turned: false,
+            raw: Some(LineRead {
+                text: "abandon".into(),
+                confidence: 0.9,
+            }),
+            evidence: Default::default(),
+            narrowed: false,
+            stray: false,
+            number: None,
+            label: None,
+            apart: false,
+            joined_from: None,
+            expanded_from: Vec::new(),
+        }
+    }
+}
+
 impl WordBox {
     /// Established word geometry cannot be replaced by later OCR repair.
     /// An ordinal is optional: a local prefix or fragment assembly also owns
@@ -611,6 +640,17 @@ impl Reader {
 /// crop (local half-turn only on the registered/legacy path), the model's read, the
 /// recogniser's read, and where its leading run of ink ends with what
 /// that run reads as.
+impl crate::progress::Provisional for Prepared {
+    fn reading(&self) -> Option<crate::progress::Reading> {
+        Some(crate::progress::Reading::from_parts(
+            &self.ranked,
+            self.read.as_ref(),
+            self.turned,
+            self.decisions.as_ref(),
+        ))
+    }
+}
+
 struct Prepared {
     cell: Option<evidence::CellSupport>,
     writing: WritingFrame,
@@ -1695,15 +1735,7 @@ fn read_words_inner(
         word.apart = far[k] || grid_excluded[k].is_some();
         word.column_rank = k;
         word.row_rank = row_rank[columns[k]];
-        progress.region(
-            k,
-            &word.quad,
-            if word.stray {
-                RegionState::Excluded
-            } else {
-                RegionState::Read
-            },
-        );
+        progress.settled(k, &word);
         out.push(word);
     }
     // Every prepared observation keeps a slot, including strays and labels;
@@ -1812,7 +1844,7 @@ fn read_words_inner(
             word.selection = Some(selection);
             word.evidence.matching = None;
             DecisionTrace::append(&mut word.evidence.decisions, p.decisions);
-            progress.region(index, &word.quad, RegionState::Read);
+            progress.read_word(index, &word);
         }
         if let Some(event) = decision {
             DecisionTrace::push(&mut word.evidence.decisions, || event);

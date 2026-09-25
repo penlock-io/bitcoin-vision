@@ -128,6 +128,7 @@ fn run_case_traced(
                             id,
                             quad: quads[id as usize].clone(),
                             state: RegionState::Reading,
+                            reading: None,
                         })
                     })
                     .collect();
@@ -232,7 +233,25 @@ fn replacement_history_survives_two_permutations_refusal_and_restoration_without
         );
         assert_eq!(report, plain_report); // includes exact read/ROI budgets and work counters
         assert_eq!(regions, plain_regions);
-        assert_eq!(events, plain_events);
+        // Tracing adds the decisions to each reading and changes nothing else.
+        let untraced = |events: &[Event]| {
+            events
+                .iter()
+                .cloned()
+                .map(|mut event| {
+                    match &mut event {
+                        Event::Region(r) | Event::Replaced { region: r, .. } => {
+                            if let Some(reading) = &mut r.reading {
+                                reading.decisions = None;
+                            }
+                        }
+                        _ => {}
+                    }
+                    event
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(untraced(&events), plain_events);
         for (i, word) in scan.words.iter().enumerate() {
             let value = word.evidence.decisions.as_ref().unwrap().to_json();
             let events = value["events"].as_array().unwrap();
@@ -368,16 +387,15 @@ fn rejected_or_failed_extent_reads_restore_visible_and_excluded_parent_ids() {
             (&events[events.len() - 2], 5, RegionState::Read),
             (events.last().unwrap(), 6, RegionState::Excluded),
         ] {
+            let Event::Region(region) = event else {
+                panic!("expected a region, got {event:?}")
+            };
+            let word = &scan.words[regions[id as usize].word_index as usize];
             assert_eq!(
-                event,
-                &Event::Region(Region {
-                    id,
-                    quad: scan.words[regions[id as usize].word_index as usize]
-                        .quad
-                        .clone(),
-                    state,
-                })
+                (region.id, &region.quad, region.state),
+                (id, &word.quad, state)
             );
+            assert_eq!(region.reading, Some(crate::progress::Reading::of(word)));
         }
     }
 }
