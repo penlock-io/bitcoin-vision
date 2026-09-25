@@ -293,17 +293,19 @@ impl std::fmt::Display for SelectionError {
 }
 impl std::error::Error for SelectionError {}
 
-/// Select once from actual matching evidence, or the literal if none was supplied.
-/// Uses every supplied probability, without a rank limit or distance budget.
-/// Exact normalized words survive unavailable classifier support without an accept.
-pub fn select(
-    literal: Option<&str>,
-    matching: Option<&str>,
-    ranked: &[(usize, f32)],
-    min_prob: f32,
-    min_margin: f32,
-) -> Result<Selection, SelectionError> {
-    select_inner(literal, matching, ranked, min_prob, min_margin, false)
+stage! {
+    /// Select once from actual matching evidence, or the literal if none was supplied.
+    /// Uses every supplied probability, without a rank limit or distance budget.
+    /// Exact normalized words survive unavailable classifier support without an accept.
+    pub fn select(
+        literal: Option<&str>,
+        matching: Option<&str>,
+        ranked: &[(usize, f32)],
+        min_prob: f32,
+        min_margin: f32,
+    ) -> Result<Selection, SelectionError> {
+        select_inner(literal, matching, ranked, min_prob, min_margin, false)
+    }
 }
 
 /// Historical bounded-log10-v1 for saved comparisons, not product selection.

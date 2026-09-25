@@ -34,32 +34,36 @@ impl Prefix<'_> {
     }
 }
 
-/// A dot alone or a one/two-alphanumeric head immediately followed by a dot.
-/// Does not recurse into the remainder or strip digit-like word letters.
-pub fn prefix(literal: &str) -> Option<Prefix<'_>> {
-    let start = literal.trim_start();
-    let mut chars = 0;
-    for (offset, ch) in start.char_indices() {
-        if ch == '.' {
-            let remainder = start[offset + 1..].trim_start();
-            return Some(Prefix {
-                head: &start[..offset],
-                remainder,
-                consumed: literal.len() - remainder.len(),
-            });
+stage! {
+    /// A dot alone or a one/two-alphanumeric head immediately followed by a dot.
+    /// Does not recurse into the remainder or strip digit-like word letters.
+    pub fn prefix(literal: &str) -> Option<Prefix<'_>> {
+        let start = literal.trim_start();
+        let mut chars = 0;
+        for (offset, ch) in start.char_indices() {
+            if ch == '.' {
+                let remainder = start[offset + 1..].trim_start();
+                return Some(Prefix {
+                    head: &start[..offset],
+                    remainder,
+                    consumed: literal.len() - remainder.len(),
+                });
+            }
+            if !ch.is_alphanumeric() || chars == 2 {
+                return None;
+            }
+            chars += 1;
         }
-        if !ch.is_alphanumeric() || chars == 2 {
-            return None;
-        }
-        chars += 1;
+        None
     }
-    None
 }
 
-/// A complete dotted label token, not an attached prefix plus word.
-pub fn token(literal: &str) -> Option<Label> {
-    let parsed = prefix(literal)?;
-    parsed.remainder.is_empty().then(|| parsed.label())
+stage! {
+    /// A complete dotted label token, not an attached prefix plus word.
+    pub fn token(literal: &str) -> Option<Label> {
+        let parsed = prefix(literal)?;
+        parsed.remainder.is_empty().then(|| parsed.label())
+    }
 }
 
 /// Whether label evidence establishes a list, irrespective of sequence trust.
@@ -122,65 +126,67 @@ pub struct Matching<'a> {
     pub reason: MatchReason,
 }
 
-/// Select matching evidence for an already identified dotted-label word.
-/// `word_only` must be an adopted crop's actual read, not a rejected proposal.
-/// A complete label-only literal returns no word evidence. This function
-/// performs no OCR, confidence check, geometric cut or ordinal assignment.
-pub fn matching<'a>(whole: &'a str, word_only: Option<&'a str>) -> Option<Matching<'a>> {
-    let parsed = prefix(whole);
-    let exact_word = |text: &str| Word::from_bip39(&normalise(text)).is_some();
-    if let Some(p) = parsed {
-        if p.remainder.is_empty() {
-            return None;
+stage! {
+    /// Select matching evidence for an already identified dotted-label word.
+    /// `word_only` must be an adopted crop's actual read, not a rejected proposal.
+    /// A complete label-only literal returns no word evidence. This function
+    /// performs no OCR, confidence check, geometric cut or ordinal assignment.
+    pub fn matching<'a>(whole: &'a str, word_only: Option<&'a str>) -> Option<Matching<'a>> {
+        let parsed = prefix(whole);
+        let exact_word = |text: &str| Word::from_bip39(&normalise(text)).is_some();
+        if let Some(p) = parsed {
+            if p.remainder.is_empty() {
+                return None;
+            }
+            // Without an adopted geometric cut, a second valid word in the
+            // remainder is not evidence to prefer it (ab.use must not become use).
+            if word_only.is_none() && exact_word(whole) {
+                return Some(Matching {
+                    text: whole,
+                    origin: MatchOrigin::Whole,
+                    removed_prefix_bytes: 0,
+                    reason: MatchReason::WholeWordWithoutCut,
+                });
+            }
+            if exact_word(p.remainder) {
+                return Some(Matching {
+                    text: p.remainder,
+                    origin: MatchOrigin::Whole,
+                    removed_prefix_bytes: p.consumed,
+                    reason: MatchReason::CleanedWholeWord,
+                });
+            }
         }
-        // Without an adopted geometric cut, a second valid word in the
-        // remainder is not evidence to prefer it (ab.use must not become use).
-        if word_only.is_none() && exact_word(whole) {
+        if let Some(literal) = word_only {
+            // A cut may leave the same label's dot at the crop edge. Remove at
+            // most that dot, never another alphanumeric head from the word.
+            let text = literal
+                .trim_start()
+                .strip_prefix('.')
+                .map(str::trim_start)
+                .unwrap_or(literal);
             return Some(Matching {
-                text: whole,
-                origin: MatchOrigin::Whole,
-                removed_prefix_bytes: 0,
-                reason: MatchReason::WholeWordWithoutCut,
+                text,
+                origin: MatchOrigin::WordOnly,
+                removed_prefix_bytes: literal.len() - text.len(),
+                reason: MatchReason::WordOnly,
             });
         }
-        if exact_word(p.remainder) {
-            return Some(Matching {
+        Some(match parsed {
+            Some(p) => Matching {
                 text: p.remainder,
                 origin: MatchOrigin::Whole,
                 removed_prefix_bytes: p.consumed,
-                reason: MatchReason::CleanedWholeWord,
-            });
-        }
+                reason: MatchReason::CleanedWhole,
+            },
+            None => Matching {
+                text: whole,
+                origin: MatchOrigin::Whole,
+                removed_prefix_bytes: 0,
+                reason: MatchReason::Whole,
+            },
+        })
     }
-    if let Some(literal) = word_only {
-        // A cut may leave the same label's dot at the crop edge. Remove at
-        // most that dot, never another alphanumeric head from the word.
-        let text = literal
-            .trim_start()
-            .strip_prefix('.')
-            .map(str::trim_start)
-            .unwrap_or(literal);
-        return Some(Matching {
-            text,
-            origin: MatchOrigin::WordOnly,
-            removed_prefix_bytes: literal.len() - text.len(),
-            reason: MatchReason::WordOnly,
-        });
-    }
-    Some(match parsed {
-        Some(p) => Matching {
-            text: p.remainder,
-            origin: MatchOrigin::Whole,
-            removed_prefix_bytes: p.consumed,
-            reason: MatchReason::CleanedWhole,
-        },
-        None => Matching {
-            text: whole,
-            origin: MatchOrigin::Whole,
-            removed_prefix_bytes: 0,
-            reason: MatchReason::Whole,
-        },
-    })
 }
 
 #[cfg(test)]

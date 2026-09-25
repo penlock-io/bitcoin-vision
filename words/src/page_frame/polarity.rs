@@ -97,25 +97,27 @@ impl PageDirection {
 }
 
 impl PageAxis {
-    /// Resolve polarity once on already-canonical pixels. No EXIF parsing or
-    /// canonical-photo transform occurs here. `margin` is the word-crop margin.
-    /// Fallback performs at most two OCR calls, no classifier/detector calls;
-    /// errors abort instead of becoming a preference for the other orientation.
-    pub fn resolve(
-        &self,
-        photo: &RgbImage,
-        photo_up: PhotoUp,
-        recogniser: Option<&Recogniser>,
-        margin: f32,
-        trace: bool,
-    ) -> Result<PageDirection, String> {
-        self.resolve_with(
-            photo,
-            photo_up,
-            recogniser.map(|r| move |crop: &GrayImage| r.read(crop)),
-            margin,
-            trace,
-        )
+    stage! {
+        /// Resolve polarity once on already-canonical pixels. No EXIF parsing or
+        /// canonical-photo transform occurs here. `margin` is the word-crop margin.
+        /// Fallback performs at most two OCR calls, no classifier/detector calls;
+        /// errors abort instead of becoming a preference for the other orientation.
+        pub fn resolve(
+            &self,
+            photo: &RgbImage,
+            photo_up: PhotoUp,
+            recogniser: Option<&Recogniser>,
+            margin: f32,
+            trace: bool,
+        ) -> Result<PageDirection, String> {
+            self.resolve_with(
+                photo,
+                photo_up,
+                recogniser.map(|r| move |crop: &GrayImage| r.read(crop)),
+                margin,
+                trace,
+            )
+        }
     }
 
     // The real crop/call owner, injectable for tests without loading models.

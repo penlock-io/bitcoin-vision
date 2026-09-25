@@ -35,3 +35,8 @@ extent-experiment = ["scan-profile", "bitcoin-vision-words/extent-experiment"]
 name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 required-features = ["bindgen"]
+
+[dev-dependencies]
+# Test fixtures build a selection and a page direction the way a scan
+# would, through stages the shipped API does not expose.
+bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx", "research"] }

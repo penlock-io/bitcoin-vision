@@ -50,65 +50,67 @@ impl Config {
     }
 }
 
-/// One minimum-cost alignment under the existing edit definition.
-/// Excludes unchanged characters; costs sum to `hybrid::distance`.
-pub fn edits(raw: &str, word: &str, w: &Weights) -> Vec<serde_json::Value> {
-    use serde_json::json;
-    let a: Vec<_> = raw.chars().collect();
-    let b: Vec<_> = word.chars().collect();
-    let mut d = vec![vec![0f32; b.len() + 1]; a.len() + 1];
-    for j in 1..=b.len() {
-        d[0][j] = w.insert * w.first + (j - 1) as f32 * w.insert;
-    }
-    for i in 1..=a.len() {
-        d[i][0] = w.delete * w.first + (i - 1) as f32 * w.delete;
-        let f = if i == 1 { w.first } else { 1. };
+stage! {
+    /// One minimum-cost alignment under the existing edit definition.
+    /// Excludes unchanged characters; costs sum to `hybrid::distance`.
+    pub fn edits(raw: &str, word: &str, w: &Weights) -> Vec<serde_json::Value> {
+        use serde_json::json;
+        let a: Vec<_> = raw.chars().collect();
+        let b: Vec<_> = word.chars().collect();
+        let mut d = vec![vec![0f32; b.len() + 1]; a.len() + 1];
         for j in 1..=b.len() {
-            d[i][j] = (d[i - 1][j] + w.delete * f)
-                .min(d[i][j - 1] + w.insert)
-                .min(
-                    d[i - 1][j - 1]
-                        + if a[i - 1] == b[j - 1] {
-                            0.
-                        } else {
-                            w.substitute * f
-                        },
-                );
+            d[0][j] = w.insert * w.first + (j - 1) as f32 * w.insert;
         }
-    }
-    let (mut i, mut j) = (a.len(), b.len());
-    let mut out = Vec::new();
-    while i > 0 || j > 0 {
-        let f = if i == 1 { w.first } else { 1. };
-        let sub = if i > 0 && j > 0 && a[i - 1] == b[j - 1] {
-            0.
-        } else {
-            w.substitute * f
-        };
-        if i > 0 && j > 0 && d[i][j] == d[i - 1][j - 1] + sub {
-            if sub > 0. {
-                out.push(json!({"operation":"substitute","raw_index":i-1,"word_index":j-1,"from":a[i-1].to_string(),"to":b[j-1].to_string(),"cost":sub}));
+        for i in 1..=a.len() {
+            d[i][0] = w.delete * w.first + (i - 1) as f32 * w.delete;
+            let f = if i == 1 { w.first } else { 1. };
+            for j in 1..=b.len() {
+                d[i][j] = (d[i - 1][j] + w.delete * f)
+                    .min(d[i][j - 1] + w.insert)
+                    .min(
+                        d[i - 1][j - 1]
+                            + if a[i - 1] == b[j - 1] {
+                                0.
+                            } else {
+                                w.substitute * f
+                            },
+                    );
             }
-            i -= 1;
-            j -= 1;
-        } else if i > 0 && d[i][j] == d[i - 1][j] + w.delete * f {
-            out.push(json!({"operation":"delete","raw_index":i-1,"from":a[i-1].to_string(),"cost":w.delete*f}));
-            i -= 1;
-        } else {
-            let cost = if i == 0 && j == 1 {
-                w.insert * w.first
-            } else {
-                w.insert
-            };
-            assert!(j > 0 && d[i][j] == d[i][j - 1] + cost);
-            out.push(
-                json!({"operation":"insert","word_index":j-1,"to":b[j-1].to_string(),"cost":cost}),
-            );
-            j -= 1;
         }
+        let (mut i, mut j) = (a.len(), b.len());
+        let mut out = Vec::new();
+        while i > 0 || j > 0 {
+            let f = if i == 1 { w.first } else { 1. };
+            let sub = if i > 0 && j > 0 && a[i - 1] == b[j - 1] {
+                0.
+            } else {
+                w.substitute * f
+            };
+            if i > 0 && j > 0 && d[i][j] == d[i - 1][j - 1] + sub {
+                if sub > 0. {
+                    out.push(json!({"operation":"substitute","raw_index":i-1,"word_index":j-1,"from":a[i-1].to_string(),"to":b[j-1].to_string(),"cost":sub}));
+                }
+                i -= 1;
+                j -= 1;
+            } else if i > 0 && d[i][j] == d[i - 1][j] + w.delete * f {
+                out.push(json!({"operation":"delete","raw_index":i-1,"from":a[i-1].to_string(),"cost":w.delete*f}));
+                i -= 1;
+            } else {
+                let cost = if i == 0 && j == 1 {
+                    w.insert * w.first
+                } else {
+                    w.insert
+                };
+                assert!(j > 0 && d[i][j] == d[i][j - 1] + cost);
+                out.push(
+                    json!({"operation":"insert","word_index":j-1,"to":b[j-1].to_string(),"cost":cost}),
+                );
+                j -= 1;
+            }
+        }
+        out.reverse();
+        out
     }
-    out.reverse();
-    out
 }
 
 #[cfg(test)]

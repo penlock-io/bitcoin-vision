@@ -60,7 +60,7 @@ refuse "bitcoin-vision-mobile" "$phone" svg2pdf pdf-writer
 # The stages are public only under the word pipeline's `research` feature,
 # which the research harness turns on and nothing that ships may.
 features_of() {
-    cargo tree --locked --edges features --prefix none --invert bitcoin-vision-words "$@" |
+    cargo tree --locked --edges features,normal,build --prefix none --invert bitcoin-vision-words "$@" |
         sed -n 's/^bitcoin-vision-words feature "\([^"]*\)".*/\1/p' | sort -u
 }
 refuse_research() {

@@ -88,21 +88,25 @@ pub struct Segmentation {
 }
 
 impl Segmentation {
-    /// Performs the normal splitter once per raw source, recording its outcome.
-    pub fn new(photo: &RgbImage, quads: &[Quad]) -> Self {
-        Self::with_splitter(quads, |q| split_quad_accounted(photo, q, Split::LOCKED))
+    stage! {
+        /// Performs the normal splitter once per raw source, recording its outcome.
+        pub fn new(photo: &RgbImage, quads: &[Quad]) -> Self {
+            Self::with_splitter(quads, |q| split_quad_accounted(photo, q, Split::LOCKED))
+        }
     }
 
-    /// Split all raw sources along the already-resolved page direction. Ledger
-    /// quads remain canonical, including sources with no resulting parts.
-    pub fn in_direction(
-        photo: &RgbImage,
-        quads: &[Quad],
-        direction: crate::page_frame::Direction,
-    ) -> Self {
-        Self::with_splitter(quads, |q| {
-            crate::split::split_in_direction(photo, q, Split::LOCKED, direction)
-        })
+    stage! {
+        /// Split all raw sources along the already-resolved page direction. Ledger
+        /// quads remain canonical, including sources with no resulting parts.
+        pub fn in_direction(
+            photo: &RgbImage,
+            quads: &[Quad],
+            direction: crate::page_frame::Direction,
+        ) -> Self {
+            Self::with_splitter(quads, |q| {
+                crate::split::split_in_direction(photo, q, Split::LOCKED, direction)
+            })
+        }
     }
 
     fn with_splitter(
@@ -148,21 +152,23 @@ impl Segmentation {
     }
 }
 
-/// Applies an old-to-new word permutation without changing raw/part IDs,
-/// original geometry or empty outcomes. Called by the existing traversal,
-/// native-join and extent insertion owners, never by a second layout fit.
-pub fn reindex(sources: &mut [RawSource], inverse: &[usize]) {
-    for source in sources {
-        if let Outcome::Parts(parts) = &mut source.outcome {
-            for part in parts {
-                part.word_index = part.word_index.map(|i| inverse[i]);
+stage! {
+    /// Applies an old-to-new word permutation without changing raw/part IDs,
+    /// original geometry or empty outcomes. Called by the existing traversal,
+    /// native-join and extent insertion owners, never by a second layout fit.
+    pub fn reindex(sources: &mut [RawSource], inverse: &[usize]) {
+        for source in sources {
+            if let Outcome::Parts(parts) = &mut source.outcome {
+                for part in parts {
+                    part.word_index = part.word_index.map(|i| inverse[i]);
+                }
             }
-        }
-        if let Outcome::Rescued { word_index, .. } = &mut source.outcome {
-            *word_index = inverse[*word_index];
-        }
-        if let Some(union) = &mut source.union {
-            union.word_index = union.word_index.map(|i| inverse[i]);
+            if let Outcome::Rescued { word_index, .. } = &mut source.outcome {
+                *word_index = inverse[*word_index];
+            }
+            if let Some(union) = &mut source.union {
+                union.word_index = union.word_index.map(|i| inverse[i]);
+            }
         }
     }
 }

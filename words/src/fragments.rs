@@ -186,10 +186,12 @@ pub struct Plan {
     pub decisions: Vec<Decision>,
 }
 
-/// Plans ownership using the approved dimensionless constants. A part-rich raw
-/// source contributes only one scale sample; an empty split remains geometry.
-pub fn plan(sources: &[RawSource], margin: f32) -> Plan {
-    plan_with_writing(sources, margin, WritingFrame::Local)
+stage! {
+    /// Plans ownership using the approved dimensionless constants. A part-rich raw
+    /// source contributes only one scale sample; an empty split remains geometry.
+    pub fn plan(sources: &[RawSource], margin: f32) -> Plan {
+        plan_with_writing(sources, margin, WritingFrame::Local)
+    }
 }
 
 pub(crate) fn plan_with_writing(sources: &[RawSource], margin: f32, writing: WritingFrame) -> Plan {

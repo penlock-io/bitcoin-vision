@@ -7,6 +7,23 @@
 //! pass) are private, and public only under the `research` feature, for the
 //! research harness that studies them one at a time.
 
+/// Declares a stage: public to a research build, which studies the stages
+/// one at a time, and crate-private otherwise, where the only way to run one
+/// is through [`Scanner`]. A research entry point the scan does not call
+/// itself is dead code in a private build, and meant to be.
+macro_rules! stage {
+    ($(#[$meta:meta])* pub $($item:tt)*) => {
+        #[cfg(feature = "research")]
+        $(#[$meta])*
+        pub $($item)*
+
+        #[cfg(not(feature = "research"))]
+        $(#[$meta])*
+        #[allow(dead_code)]
+        pub(crate) $($item)*
+    };
+}
+
 pub mod boxes;
 pub mod detect;
 #[cfg(feature = "research")]
@@ -87,3 +104,31 @@ pub use scanner::{
 };
 pub use split::Frame;
 pub use vocabulary::Word;
+
+/// A build without `research` cannot reach a stage. Each of these fails to
+/// compile, and the scan it runs them through does not:
+///
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::phrase::read_words_observed;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::wordsheet::read_observed;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::sources::Segmentation::new;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::fragments::plan;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::hybrid::select;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::numbering::fit;
+/// ```
+/// ```
+/// let _ = bitcoin_vision_words::Scanner::start;
+/// ```
+#[cfg(not(feature = "research"))]
+#[doc(hidden)]
+pub mod stages_are_private {}

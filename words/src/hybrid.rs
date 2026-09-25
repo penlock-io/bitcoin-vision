@@ -9,9 +9,12 @@ use crate::vocabulary::Word;
 
 pub mod scoring;
 mod selection;
+#[cfg(not(feature = "research"))]
+pub(crate) use selection::select;
+#[cfg(feature = "research")]
+pub use selection::select;
 pub use selection::{
-    Branch, Candidate, Confirmation, Selection, SelectionError, Support, TextSource, select,
-    select_bounded,
+    Branch, Candidate, Confirmation, Selection, SelectionError, Support, TextSource, select_bounded,
 };
 
 /// The pinned edit weights and budget.

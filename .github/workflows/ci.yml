@@ -18,6 +18,10 @@ jobs:
       # that does not.
       - name: The Penlock pipeline on its own default features
         run: cargo +stable test --locked -p penlock-scan --tests
+      # Without the research feature every other step turns on, so this is the
+      # API as it ships: the scan's contract through it, and no stage in reach.
+      - name: The word pipeline as it ships
+        run: cargo +stable test --locked -p bitcoin-vision-words --features bundled-models
       - name: The word pipeline's example
         run: cargo +stable test --locked -p bitcoin-vision-words --features bundled-models --example scan
       - name: The Penlock pipeline's example

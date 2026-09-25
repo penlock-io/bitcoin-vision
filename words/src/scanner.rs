@@ -430,3 +430,49 @@ pub fn check_dimensions(width: u32, height: u32) -> Result<(), ScanError> {
 pub fn decode_image(encoded: &[u8], orientation: Option<u8>) -> Result<RgbImage, ScanError> {
     bitcoin_vision_core::decode_image(encoded, orientation).map_err(|e| ScanError::Image(e.0))
 }
+
+// The models run against the bundled files, which every checkout carries; the
+// cancellation contract is checked at each one's own entry point, which the
+// shipped API does not expose.
+#[cfg(all(test, feature = "onnx"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_model_starts_inside_a_cancelled_scan() {
+        use crate::detect::{Detector, Quad};
+        use crate::phrase::{CROP_MARGIN, Reader, read_crop};
+        use crate::recogniser::Recogniser;
+        // Source-relative, so a copy of this file compiled elsewhere still
+        // finds them.
+        let detector =
+            Detector::from_bytes(include_bytes!("../models/word-detector.onnx")).unwrap();
+        let reader = Reader::from_bytes(
+            include_bytes!("../models/word-reference.onnx"),
+            include_str!("../models/word-reference.calibration"),
+        )
+        .unwrap();
+        let recogniser = Recogniser::from_bytes(
+            include_bytes!("../models/text-recogniser.onnx"),
+            include_str!("../models/text-recogniser.dict.txt"),
+        )
+        .unwrap();
+        let photo =
+            decode_image(include_bytes!("../examples/photos/handwritten.png"), None).unwrap();
+        let quad = Quad([(100., 100.), (400., 100.), (400., 180.), (100., 180.)]);
+        let crop = image::DynamicImage::ImageRgb8(photo.clone())
+            .crop_imm(100, 100, 300, 80)
+            .into_luma8();
+
+        let (emit, state) = bitcoin_vision_core::scan::record::<Words>();
+        let _cancellable = emit.cancellation().enter();
+        assert!(detector.detect(&photo).is_ok(), "runs before the cancel");
+        state.cancel();
+        let refused = |result: Result<(), String>| {
+            assert_eq!(result.unwrap_err(), "scan cancelled");
+        };
+        refused(detector.detect(&photo).map(drop));
+        refused(recogniser.read(&crop).map(drop));
+        refused(read_crop(&photo, &quad, &reader, None, CROP_MARGIN).map(drop));
+    }
+}

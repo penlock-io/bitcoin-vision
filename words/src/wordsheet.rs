@@ -442,131 +442,141 @@ fn ink_bounds(rectified: &GrayImage, interior: &Rect, px_per_mm: f64) -> Option<
     })
 }
 
-/// Whether `gray` shows one recovery phrase sheet of this version: its
-/// fiducials and orientation mark found as one frame, and its mark
-/// field decoding to the sheet's id and version. A strip, an ordinary
-/// page or any other marks give `None`. The sheet comes back with its
-/// face-on view for the fields to be cut from.
-pub fn identify(gray: &GrayImage) -> Option<(Frame, GrayImage)> {
-    let geometry = WordSheet.geometry();
-    let located = match locate_frames(gray, geometry) {
-        Ok(mut all) if all.len() == 1 => all.remove(0),
-        _ => return None,
-    };
-    let rectified = located.rectify(gray, RECTIFIED_PX_PER_MM);
-    let field = read_field(&rectified, &geometry);
-    if field.count_ones() <= 1 {
-        return None;
-    }
-    match decode_with(WORD_SHEET_ID, field) {
-        Field::Own { number } if number == VERSION => Some((located, rectified)),
-        _ => None,
+stage! {
+    /// Whether `gray` shows one recovery phrase sheet of this version: its
+    /// fiducials and orientation mark found as one frame, and its mark
+    /// field decoding to the sheet's id and version. A strip, an ordinary
+    /// page or any other marks give `None`. The sheet comes back with its
+    /// face-on view for the fields to be cut from.
+    pub fn identify(gray: &GrayImage) -> Option<(Frame, GrayImage)> {
+        let geometry = WordSheet.geometry();
+        let located = match locate_frames(gray, geometry) {
+            Ok(mut all) if all.len() == 1 => all.remove(0),
+            _ => return None,
+        };
+        let rectified = located.rectify(gray, RECTIFIED_PX_PER_MM);
+        let field = read_field(&rectified, &geometry);
+        if field.count_ones() <= 1 {
+            return None;
+        }
+        match decode_with(WORD_SHEET_ID, field) {
+            Field::Own { number } if number == VERSION => Some((located, rectified)),
+            _ => None,
+        }
     }
 }
 
-/// Reads a photographed word sheet field by field, the crops read by
-/// `crop_reader`: `Ok(None)` when the photo's marks do not establish a
-/// word sheet of this version, so the detector path is the one to
-/// take; `Ok(Some)` with exactly twelve records in field order once
-/// every field is read, a blank one at its place; `Err` when an
-/// identified sheet cannot be read, which is a failure to report, never
-/// a page to hand to the detector.
-pub fn read_with(
-    photo: &RgbImage,
-    crop_reader: &dyn Fn(&RgbImage, &Quad) -> Result<WordBox, String>,
-) -> Result<Option<PageScan>, String> {
-    read_with_observed(photo, crop_reader, None).map(|value| value.map(|(scan, _)| scan))
+stage! {
+    /// Reads a photographed word sheet field by field, the crops read by
+    /// `crop_reader`: `Ok(None)` when the photo's marks do not establish a
+    /// word sheet of this version, so the detector path is the one to
+    /// take; `Ok(Some)` with exactly twelve records in field order once
+    /// every field is read, a blank one at its place; `Err` when an
+    /// identified sheet cannot be read, which is a failure to report, never
+    /// a page to hand to the detector.
+    pub fn read_with(
+        photo: &RgbImage,
+        crop_reader: &dyn Fn(&RgbImage, &Quad) -> Result<WordBox, String>,
+    ) -> Result<Option<PageScan>, String> {
+        read_with_observed(photo, crop_reader, None).map(|value| value.map(|(scan, _)| scan))
+    }
 }
 
-/// [`read_with`] with field progress in canonical photo coordinates. The caller
-/// owns terminal delivery, including errors here and subsequent result packing.
-pub fn read_with_observed(
-    photo: &RgbImage,
-    crop_reader: &dyn Fn(&RgbImage, &Quad) -> Result<WordBox, String>,
-    observer: Option<&dyn crate::progress::Observer>,
-) -> Result<Option<(PageScan, Vec<crate::progress::FinalRegion>)>, String> {
-    use crate::progress::{RegionState, Stage};
-    let gray = image::DynamicImage::ImageRgb8(photo.clone()).into_luma8();
-    let Some((located, rectified)) = identify(&gray) else {
-        return Ok(None);
-    };
-    let mut progress = Stage::geometry(observer, WordSheet::FIELDS);
-    let quads: Vec<_> = WordSheet
-        .fields()
-        .iter()
-        .enumerate()
-        .map(|(i, interior)| {
-            let tight = ink_bounds(&rectified, interior, RECTIFIED_PX_PER_MM).unwrap_or(*interior);
-            let corners = [
-                (tight.x, tight.y),
-                (tight.x + tight.w, tight.y),
-                (tight.x + tight.w, tight.y + tight.h),
-                (tight.x, tight.y + tight.h),
-            ]
-            .map(|(x, y)| {
-                let (px, py) = located.to_photo(x, y);
-                (px as f32, py as f32)
+stage! {
+    /// [`read_with`] with field progress in canonical photo coordinates. The caller
+    /// owns terminal delivery, including errors here and subsequent result packing.
+    pub fn read_with_observed(
+        photo: &RgbImage,
+        crop_reader: &dyn Fn(&RgbImage, &Quad) -> Result<WordBox, String>,
+        observer: Option<&dyn crate::progress::Observer>,
+    ) -> Result<Option<(PageScan, Vec<crate::progress::FinalRegion>)>, String> {
+        use crate::progress::{RegionState, Stage};
+        let gray = image::DynamicImage::ImageRgb8(photo.clone()).into_luma8();
+        let Some((located, rectified)) = identify(&gray) else {
+            return Ok(None);
+        };
+        let mut progress = Stage::geometry(observer, WordSheet::FIELDS);
+        let quads: Vec<_> = WordSheet
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(i, interior)| {
+                let tight = ink_bounds(&rectified, interior, RECTIFIED_PX_PER_MM).unwrap_or(*interior);
+                let corners = [
+                    (tight.x, tight.y),
+                    (tight.x + tight.w, tight.y),
+                    (tight.x + tight.w, tight.y + tight.h),
+                    (tight.x, tight.y + tight.h),
+                ]
+                .map(|(x, y)| {
+                    let (px, py) = located.to_photo(x, y);
+                    (px as f32, py as f32)
+                });
+                let quad = Quad(clockwise(corners));
+                progress.region(i, &quad, RegionState::Found);
+                quad
+            })
+            .collect();
+        progress.reading();
+        let mut words = Vec::with_capacity(WordSheet::FIELDS);
+        for (i, quad) in quads.into_iter().enumerate() {
+            progress.region(i, &quad, RegionState::Reading);
+            let mut word = crop_reader(photo, &quad).map_err(|e| format!("field {}: {e}", i + 1))?;
+            word.column_rank = i;
+            word.row_rank = i;
+            crate::phrase::DecisionTrace::push(&mut word.evidence.decisions, || {
+                serde_json::json!({"rule":"worksheet_layout","status":"evaluated",
+                    "field":i,"reason":"registered field; no freeform label, region or replacement passes"})
             });
-            let quad = Quad(clockwise(corners));
-            progress.region(i, &quad, RegionState::Found);
-            quad
-        })
-        .collect();
-    progress.reading();
-    let mut words = Vec::with_capacity(WordSheet::FIELDS);
-    for (i, quad) in quads.into_iter().enumerate() {
-        progress.region(i, &quad, RegionState::Reading);
-        let mut word = crop_reader(photo, &quad).map_err(|e| format!("field {}: {e}", i + 1))?;
-        word.column_rank = i;
-        word.row_rank = i;
-        crate::phrase::DecisionTrace::push(&mut word.evidence.decisions, || {
-            serde_json::json!({"rule":"worksheet_layout","status":"evaluated",
-                "field":i,"reason":"registered field; no freeform label, region or replacement passes"})
-        });
-        progress.settled(i, &word);
-        progress.read_done(i + 1);
-        words.push(word);
+            progress.settled(i, &word);
+            progress.read_done(i + 1);
+            words.push(word);
+        }
+        progress.checking();
+        let mut scan = PageScan {
+            page_direction: None,
+            width: photo.width(),
+            height: photo.height(),
+            words,
+            numbering: Numbering::None,
+            join_trials: Vec::new(),
+            sources: Vec::new(), // Registered fields, not raw detector observations.
+        };
+        let regions = progress.into_regions();
+        crate::phrase::history::terminal(&mut scan, &regions, "scan_return");
+        Ok(Some((scan, regions)))
     }
-    progress.checking();
-    let mut scan = PageScan {
-        page_direction: None,
-        width: photo.width(),
-        height: photo.height(),
-        words,
-        numbering: Numbering::None,
-        join_trials: Vec::new(),
-        sources: Vec::new(), // Registered fields, not raw detector observations.
-    };
-    let regions = progress.into_regions();
-    crate::phrase::history::terminal(&mut scan, &regions, "scan_return");
-    Ok(Some((scan, regions)))
 }
 
-/// [`read_with`] through the stage's own crop reading: the word model,
-/// the recogniser, the keep rule and the pick, and no number looked for,
-/// since a field holds nothing but its word.
-pub fn read(
-    photo: &RgbImage,
-    reader: &Reader,
-    recogniser: Option<&Recogniser>,
-    margin: f32,
-) -> Result<Option<PageScan>, String> {
-    read_with(photo, &|photo, quad| {
-        read_crop(photo, quad, reader, recogniser, margin)
-    })
+stage! {
+    /// [`read_with`] through the stage's own crop reading: the word model,
+    /// the recogniser, the keep rule and the pick, and no number looked for,
+    /// since a field holds nothing but its word.
+    pub fn read(
+        photo: &RgbImage,
+        reader: &Reader,
+        recogniser: Option<&Recogniser>,
+        margin: f32,
+    ) -> Result<Option<PageScan>, String> {
+        read_with(photo, &|photo, quad| {
+            read_crop(photo, quad, reader, recogniser, margin)
+        })
+    }
 }
 
-/// [`read`] with optional native field observations and a final identity map.
-pub fn read_observed(
-    photo: &RgbImage,
-    reader: &Reader,
-    recogniser: Option<&Recogniser>,
-    margin: f32,
-    observer: Option<&dyn crate::progress::Observer>,
-) -> Result<Option<(PageScan, Vec<crate::progress::FinalRegion>)>, String> {
-    read_with_observed(
-        photo,
-        &|photo, quad| read_crop(photo, quad, reader, recogniser, margin),
-        observer,
-    )
+stage! {
+    /// [`read`] with optional native field observations and a final identity map.
+    pub fn read_observed(
+        photo: &RgbImage,
+        reader: &Reader,
+        recogniser: Option<&Recogniser>,
+        margin: f32,
+        observer: Option<&dyn crate::progress::Observer>,
+    ) -> Result<Option<(PageScan, Vec<crate::progress::FinalRegion>)>, String> {
+        read_with_observed(
+            photo,
+            &|photo, quad| read_crop(photo, quad, reader, recogniser, margin),
+            observer,
+        )
+    }
 }

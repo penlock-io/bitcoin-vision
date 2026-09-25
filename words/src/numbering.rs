@@ -103,43 +103,47 @@ pub enum Label {
 /// it for a letter.
 pub(crate) const SHAPED: &str = "lLIiSsGgOoBbZzqADT|";
 
-/// The rest of a read past the label it begins with, when it begins
-/// with one: one or two digits or digit-shaped characters, then at
-/// least one mark (a dot, a colon, a bracket, a dash) or space, then
-/// something. For a number glued to its word with no gap of ink to
-/// cut at.
-pub fn past_label(read: &str) -> Option<&str> {
-    let head: String = read
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || SHAPED.contains(*c))
-        .take(2)
-        .collect();
-    if head.is_empty() {
-        return None;
+stage! {
+    /// The rest of a read past the label it begins with, when it begins
+    /// with one: one or two digits or digit-shaped characters, then at
+    /// least one mark (a dot, a colon, a bracket, a dash) or space, then
+    /// something. For a number glued to its word with no gap of ink to
+    /// cut at.
+    pub fn past_label(read: &str) -> Option<&str> {
+        let head: String = read
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || SHAPED.contains(*c))
+            .take(2)
+            .collect();
+        if head.is_empty() {
+            return None;
+        }
+        let after = &read[head.len()..];
+        let rest = after.trim_start_matches(|c: char| ".:)]-_".contains(c) || c.is_whitespace());
+        (rest.len() < after.len() && !rest.is_empty()).then_some(rest)
     }
-    let after = &read[head.len()..];
-    let rest = after.trim_start_matches(|c: char| ".:)]-_".contains(c) || c.is_whitespace());
-    (rest.len() < after.len() && !rest.is_empty()).then_some(rest)
 }
 
-/// The label a token reads as, if any: one or two characters that are
-/// digits or letters a handwritten digit reads as, then nothing but a
-/// mark (a dot, a colon, a bracket, a dash) and space.
-pub fn label_of(token: &str) -> Option<Label> {
-    let token = token.trim();
-    let body = token.trim_end_matches(|c: char| ".:)]-_ ".contains(c) || c.is_whitespace());
-    if body.is_empty()
-        || body.chars().count() > 2
-        || body.chars().any(|c| !c.is_ascii_alphanumeric())
-    {
-        return None;
+stage! {
+    /// The label a token reads as, if any: one or two characters that are
+    /// digits or letters a handwritten digit reads as, then nothing but a
+    /// mark (a dot, a colon, a bracket, a dash) and space.
+    pub fn label_of(token: &str) -> Option<Label> {
+        let token = token.trim();
+        let body = token.trim_end_matches(|c: char| ".:)]-_ ".contains(c) || c.is_whitespace());
+        if body.is_empty()
+            || body.chars().count() > 2
+            || body.chars().any(|c| !c.is_ascii_alphanumeric())
+        {
+            return None;
+        }
+        if body.chars().all(|c| c.is_ascii_digit()) {
+            return body.parse().ok().filter(|&n| n >= 1).map(Label::Exact);
+        }
+        body.chars()
+            .all(|c| c.is_ascii_digit() || SHAPED.contains(c))
+            .then_some(Label::Shaped)
     }
-    if body.chars().all(|c| c.is_ascii_digit()) {
-        return body.parse().ok().filter(|&n| n >= 1).map(Label::Exact);
-    }
-    body.chars()
-        .all(|c| c.is_ascii_digit() || SHAPED.contains(c))
-        .then_some(Label::Shaped)
 }
 
 /// The numbering the page's labels make.
@@ -191,167 +195,169 @@ impl Numbering {
 /// is held. This does not gate the independent dotted-list mode.
 pub const MIN_RUN: usize = 8;
 
-/// Fits the labels to the run 1…N. `labels[i]` is box i's label, or
-/// `None` for a box with none; `columns` and `rows` are the two
-/// reading orders over the boxes that can take a place in the run. A
-/// box in neither order takes no part at all — its label is neither
-/// a number of the run, nor a duplicate, nor reserved, nor unresolved
-/// — so what the region or the keep rule left out cannot reach the
-/// numbering by its label. The order with fewer inversions
-/// among the exact numbers is the page's, and the longest rising run
-/// through them must reach [`MIN_RUN`], or the page is not numbered
-/// (too few numbers) or its numbers contradict one another (enough
-/// numbers, out of order). Every exact number is reserved, in place
-/// or not; the holes left between two numbers in place go to the
-/// boxes between them when they are exactly as many, and a shaped
-/// label directly after the last number in place continues the run.
-pub fn fit(given: &[Option<Label>], columns: &[usize], rows: &[usize]) -> Numbering {
-    let placed: HashSet<usize> = columns.iter().chain(rows).copied().collect();
-    let labels: Vec<Option<Label>> = given
-        .iter()
-        .enumerate()
-        .map(|(i, l)| if placed.contains(&i) { *l } else { None })
-        .collect();
-    let labels = labels.as_slice();
-    let exact: Vec<(usize, u32)> = labels
-        .iter()
-        .enumerate()
-        .filter_map(|(i, l)| match l {
-            Some(Label::Exact(n)) => Some((i, *n)),
-            _ => None,
-        })
-        .collect();
-    if exact.len() < MIN_RUN {
-        return Numbering::None;
-    }
-    let mut seen = HashMap::new();
-    for &(i, n) in &exact {
-        if let Some(first) = seen.insert(n, i) {
-            return Numbering::Inconsistent {
-                detail: format!("two boxes are numbered {n} (boxes {first} and {i})"),
-            };
-        }
-    }
-    let highest = exact.iter().map(|&(_, n)| n).max().unwrap_or(0);
-    if highest as usize > 2 * labels.len().max(12) {
-        return Numbering::Inconsistent {
-            detail: format!("numbered up to {highest} with {} boxes", labels.len()),
-        };
-    }
-    let values_in = |order: &[usize]| -> Vec<u32> {
-        order
+stage! {
+    /// Fits the labels to the run 1…N. `labels[i]` is box i's label, or
+    /// `None` for a box with none; `columns` and `rows` are the two
+    /// reading orders over the boxes that can take a place in the run. A
+    /// box in neither order takes no part at all — its label is neither
+    /// a number of the run, nor a duplicate, nor reserved, nor unresolved
+    /// — so what the region or the keep rule left out cannot reach the
+    /// numbering by its label. The order with fewer inversions
+    /// among the exact numbers is the page's, and the longest rising run
+    /// through them must reach [`MIN_RUN`], or the page is not numbered
+    /// (too few numbers) or its numbers contradict one another (enough
+    /// numbers, out of order). Every exact number is reserved, in place
+    /// or not; the holes left between two numbers in place go to the
+    /// boxes between them when they are exactly as many, and a shaped
+    /// label directly after the last number in place continues the run.
+    pub fn fit(given: &[Option<Label>], columns: &[usize], rows: &[usize]) -> Numbering {
+        let placed: HashSet<usize> = columns.iter().chain(rows).copied().collect();
+        let labels: Vec<Option<Label>> = given
             .iter()
-            .filter_map(|&i| match labels[i] {
-                Some(Label::Exact(n)) => Some(n),
+            .enumerate()
+            .map(|(i, l)| if placed.contains(&i) { *l } else { None })
+            .collect();
+        let labels = labels.as_slice();
+        let exact: Vec<(usize, u32)> = labels
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| match l {
+                Some(Label::Exact(n)) => Some((i, *n)),
                 _ => None,
             })
-            .collect()
-    };
-    let inversions = |values: &[u32]| {
-        (0..values.len())
-            .flat_map(|a| (a + 1..values.len()).map(move |b| (a, b)))
-            .filter(|&(a, b)| values[a] > values[b])
-            .count()
-    };
-    let order: Vec<usize> = if inversions(&values_in(rows)) < inversions(&values_in(columns)) {
-        rows.to_vec()
-    } else {
-        columns.to_vec()
-    };
-    let mut numbers: Vec<Option<u32>> = labels
-        .iter()
-        .map(|l| match l {
-            Some(Label::Exact(n)) => Some(*n),
-            _ => None,
-        })
-        .collect();
-
-    // the exact numbers in reading order; a number that breaks the
-    // longest rising run through them is out of place
-    let placed: Vec<(usize, u32)> = order
-        .iter()
-        .filter_map(|&i| numbers[i].map(|n| (i, n)))
-        .collect();
-    let rising = longest_rising(&placed.iter().map(|&(_, n)| n).collect::<Vec<_>>());
-    if rising.len() < MIN_RUN {
-        return Numbering::Inconsistent {
-            detail: format!(
-                "{} numbers read but only {} of them in order",
-                exact.len(),
-                rising.len()
-            ),
-        };
-    }
-    let out_of_place: Vec<u32> = placed
-        .iter()
-        .enumerate()
-        .filter(|(k, _)| !rising.contains(k))
-        .map(|(_, &(_, n))| n)
-        .collect();
-    let reserved: HashSet<u32> = exact.iter().map(|&(_, n)| n).collect();
-
-    // the holes between each pair of numbers in place, and before the
-    // first, less any number carried elsewhere on the page: filled by
-    // the boxes between them in the reading order when they are
-    // exactly as many
-    let anchors: Vec<(usize, u32)> = rising.iter().map(|&k| placed[k]).collect();
-    let position: HashMap<usize, usize> = order.iter().enumerate().map(|(p, &i)| (i, p)).collect();
-    let mut spans: Vec<(usize, usize, u32, u32)> = Vec::new();
-    if let Some(&(first, n)) = anchors.first() {
-        spans.push((0, position[&first], 0, n));
-    }
-    for pair in anchors.windows(2) {
-        let ((a, na), (b, nb)) = (pair[0], pair[1]);
-        spans.push((position[&a] + 1, position[&b], na, nb));
-    }
-    for (from, to, na, nb) in spans {
-        let holes: Vec<u32> = (na + 1..nb).filter(|n| !reserved.contains(n)).collect();
-        let between: Vec<usize> = order[from..to]
-            .iter()
-            .copied()
-            .filter(|&i| numbers[i].is_none())
             .collect();
-        if !holes.is_empty() && between.len() == holes.len() {
-            for (&i, &n) in between.iter().zip(&holes) {
-                numbers[i] = Some(n);
+        if exact.len() < MIN_RUN {
+            return Numbering::None;
+        }
+        let mut seen = HashMap::new();
+        for &(i, n) in &exact {
+            if let Some(first) = seen.insert(n, i) {
+                return Numbering::Inconsistent {
+                    detail: format!("two boxes are numbered {n} (boxes {first} and {i})"),
+                };
             }
         }
-    }
-    // a label's shape directly after the last number in place is the
-    // next number: the run goes on by what is written, not by the
-    // count of boxes after it
-    let last = anchors.last().map_or(0, |&(_, n)| n);
-    let mut count = last.max(highest);
-    if let Some(&(last_box, _)) = anchors.last() {
-        for (next, &i) in (last + 1..).zip(&order[position[&last_box] + 1..]) {
-            if numbers[i].is_some() || labels[i] != Some(Label::Shaped) || reserved.contains(&next)
-            {
-                break;
-            }
-            numbers[i] = Some(next);
-            count = count.max(next);
-        }
-    }
-    let mut carried = HashSet::new();
-    for (i, n) in numbers.iter().enumerate() {
-        if let Some(n) = n
-            && !carried.insert(*n)
-        {
+        let highest = exact.iter().map(|&(_, n)| n).max().unwrap_or(0);
+        if highest as usize > 2 * labels.len().max(12) {
             return Numbering::Inconsistent {
-                detail: format!("box {i} would be numbered {n} twice over"),
+                detail: format!("numbered up to {highest} with {} boxes", labels.len()),
             };
         }
-    }
-    let missing: Vec<u32> = (1..=count).filter(|n| !carried.contains(n)).collect();
-    let unresolved: Vec<usize> = (0..labels.len())
-        .filter(|&i| labels[i].is_some() && numbers[i].is_none())
-        .collect();
-    Numbering::Held {
-        numbers,
-        count,
-        missing,
-        out_of_place,
-        unresolved,
+        let values_in = |order: &[usize]| -> Vec<u32> {
+            order
+                .iter()
+                .filter_map(|&i| match labels[i] {
+                    Some(Label::Exact(n)) => Some(n),
+                    _ => None,
+                })
+                .collect()
+        };
+        let inversions = |values: &[u32]| {
+            (0..values.len())
+                .flat_map(|a| (a + 1..values.len()).map(move |b| (a, b)))
+                .filter(|&(a, b)| values[a] > values[b])
+                .count()
+        };
+        let order: Vec<usize> = if inversions(&values_in(rows)) < inversions(&values_in(columns)) {
+            rows.to_vec()
+        } else {
+            columns.to_vec()
+        };
+        let mut numbers: Vec<Option<u32>> = labels
+            .iter()
+            .map(|l| match l {
+                Some(Label::Exact(n)) => Some(*n),
+                _ => None,
+            })
+            .collect();
+
+        // the exact numbers in reading order; a number that breaks the
+        // longest rising run through them is out of place
+        let placed: Vec<(usize, u32)> = order
+            .iter()
+            .filter_map(|&i| numbers[i].map(|n| (i, n)))
+            .collect();
+        let rising = longest_rising(&placed.iter().map(|&(_, n)| n).collect::<Vec<_>>());
+        if rising.len() < MIN_RUN {
+            return Numbering::Inconsistent {
+                detail: format!(
+                    "{} numbers read but only {} of them in order",
+                    exact.len(),
+                    rising.len()
+                ),
+            };
+        }
+        let out_of_place: Vec<u32> = placed
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| !rising.contains(k))
+            .map(|(_, &(_, n))| n)
+            .collect();
+        let reserved: HashSet<u32> = exact.iter().map(|&(_, n)| n).collect();
+
+        // the holes between each pair of numbers in place, and before the
+        // first, less any number carried elsewhere on the page: filled by
+        // the boxes between them in the reading order when they are
+        // exactly as many
+        let anchors: Vec<(usize, u32)> = rising.iter().map(|&k| placed[k]).collect();
+        let position: HashMap<usize, usize> = order.iter().enumerate().map(|(p, &i)| (i, p)).collect();
+        let mut spans: Vec<(usize, usize, u32, u32)> = Vec::new();
+        if let Some(&(first, n)) = anchors.first() {
+            spans.push((0, position[&first], 0, n));
+        }
+        for pair in anchors.windows(2) {
+            let ((a, na), (b, nb)) = (pair[0], pair[1]);
+            spans.push((position[&a] + 1, position[&b], na, nb));
+        }
+        for (from, to, na, nb) in spans {
+            let holes: Vec<u32> = (na + 1..nb).filter(|n| !reserved.contains(n)).collect();
+            let between: Vec<usize> = order[from..to]
+                .iter()
+                .copied()
+                .filter(|&i| numbers[i].is_none())
+                .collect();
+            if !holes.is_empty() && between.len() == holes.len() {
+                for (&i, &n) in between.iter().zip(&holes) {
+                    numbers[i] = Some(n);
+                }
+            }
+        }
+        // a label's shape directly after the last number in place is the
+        // next number: the run goes on by what is written, not by the
+        // count of boxes after it
+        let last = anchors.last().map_or(0, |&(_, n)| n);
+        let mut count = last.max(highest);
+        if let Some(&(last_box, _)) = anchors.last() {
+            for (next, &i) in (last + 1..).zip(&order[position[&last_box] + 1..]) {
+                if numbers[i].is_some() || labels[i] != Some(Label::Shaped) || reserved.contains(&next)
+                {
+                    break;
+                }
+                numbers[i] = Some(next);
+                count = count.max(next);
+            }
+        }
+        let mut carried = HashSet::new();
+        for (i, n) in numbers.iter().enumerate() {
+            if let Some(n) = n
+                && !carried.insert(*n)
+            {
+                return Numbering::Inconsistent {
+                    detail: format!("box {i} would be numbered {n} twice over"),
+                };
+            }
+        }
+        let missing: Vec<u32> = (1..=count).filter(|n| !carried.contains(n)).collect();
+        let unresolved: Vec<usize> = (0..labels.len())
+            .filter(|&i| labels[i].is_some() && numbers[i].is_none())
+            .collect();
+        Numbering::Held {
+            numbers,
+            count,
+            missing,
+            out_of_place,
+            unresolved,
+        }
     }
 }
 

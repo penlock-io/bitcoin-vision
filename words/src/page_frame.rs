@@ -137,52 +137,54 @@ pub struct PageAxis {
 }
 
 impl PageAxis {
-    /// Select greatest minimum-rectangle area, breaking exact ties by lowest
-    /// original detector index. Invalid entries do not renumber later sources.
-    pub fn from_detections(quads: &[Quad]) -> Self {
-        let mut anchor: Option<Anchor> = None;
-        for (source_id, quad) in quads.iter().enumerate() {
-            if !valid_quad(quad) {
-                continue;
+    stage! {
+        /// Select greatest minimum-rectangle area, breaking exact ties by lowest
+        /// original detector index. Invalid entries do not renumber later sources.
+        pub fn from_detections(quads: &[Quad]) -> Self {
+            let mut anchor: Option<Anchor> = None;
+            for (source_id, quad) in quads.iter().enumerate() {
+                if !valid_quad(quad) {
+                    continue;
+                }
+                let rectangle = frame_of(quad);
+                if !valid_frame(rectangle) {
+                    continue;
+                }
+                let area = |f: Frame| f64::from(f.w) * f64::from(f.h);
+                if anchor
+                    .as_ref()
+                    .is_none_or(|a| area(rectangle) > area(a.rectangle))
+                {
+                    anchor = Some(Anchor {
+                        source_id,
+                        quad: quad.clone(),
+                        rectangle,
+                    });
+                }
             }
-            let rectangle = frame_of(quad);
-            if !valid_frame(rectangle) {
-                continue;
-            }
-            let area = |f: Frame| f64::from(f.w) * f64::from(f.h);
-            if anchor
-                .as_ref()
-                .is_none_or(|a| area(rectangle) > area(a.rectangle))
-            {
-                anchor = Some(Anchor {
-                    source_id,
-                    quad: quad.clone(),
-                    rectangle,
-                });
-            }
-        }
-        let Some(a) = &anchor else {
-            return Self {
-                anchor,
-                evidence: AxisEvidence::NoValidDetections,
-                angle: 0.,
-                origin: (0., 0.),
+            let Some(a) = &anchor else {
+                return Self {
+                    anchor,
+                    evidence: AxisEvidence::NoValidDetections,
+                    angle: 0.,
+                    origin: (0., 0.),
+                };
             };
-        };
-        // Only floating-point indistinguishability, not an aspect-ratio heuristic
-        // or a reason to hunt for a different anchor. Keep the requested largest.
-        let square = (a.rectangle.w - a.rectangle.h).abs() <= 8. * f32::EPSILON * a.rectangle.w;
-        let angle = if square { 0. } else { a.rectangle.angle };
-        let origin = (a.rectangle.cx, a.rectangle.cy);
-        Self {
-            anchor,
-            evidence: if square {
-                AxisEvidence::SquareAnchor
-            } else {
-                AxisEvidence::LargestRectangle
-            },
-            angle,
-            origin,
+            // Only floating-point indistinguishability, not an aspect-ratio heuristic
+            // or a reason to hunt for a different anchor. Keep the requested largest.
+            let square = (a.rectangle.w - a.rectangle.h).abs() <= 8. * f32::EPSILON * a.rectangle.w;
+            let angle = if square { 0. } else { a.rectangle.angle };
+            let origin = (a.rectangle.cx, a.rectangle.cy);
+            Self {
+                anchor,
+                evidence: if square {
+                    AxisEvidence::SquareAnchor
+                } else {
+                    AxisEvidence::LargestRectangle
+                },
+                angle,
+                origin,
+            }
         }
     }
 
