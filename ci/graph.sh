@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The layers as resolved, not as declared: core under forms, forms under both
 # pipelines, and neither pipeline under the other. A manifest can look right
-# while a feature or a transitive dependency pulls a sibling in, so each check
-# reads the dependency tree cargo resolves with every feature on.
+# while a feature, a platform-specific table or a transitive dependency pulls a
+# sibling in, so each check reads the dependency tree cargo resolves with every
+# feature on, for every target.
 #
 # The phone is checked with the features it is built with: it reads forms and
 # never prints them, so no PDF writer may reach it.
@@ -35,15 +36,15 @@ refuse() {
 }
 
 cd "$root"
-refuse "bitcoin-vision-core" "$(reaches --all-features -p bitcoin-vision-core)" \
+refuse "bitcoin-vision-core" "$(reaches --target all --all-features -p bitcoin-vision-core)" \
     bitcoin-vision-forms bitcoin-vision penlock penlock-scan
-refuse "bitcoin-vision-forms" "$(reaches --all-features -p bitcoin-vision-forms)" \
+refuse "bitcoin-vision-forms" "$(reaches --target all --all-features -p bitcoin-vision-forms)" \
     bitcoin-vision penlock penlock-scan
-refuse "bitcoin-vision" "$(reaches --all-features -p bitcoin-vision)" \
+refuse "bitcoin-vision" "$(reaches --target all --all-features -p bitcoin-vision)" \
     penlock penlock-scan
-refuse "penlock-scan" "$(reaches --all-features -p penlock-scan)" \
+refuse "penlock-scan" "$(reaches --target all --all-features -p penlock-scan)" \
     bitcoin-vision
-refuse "penlock" "$(reaches --all-features -p penlock)" \
+refuse "penlock" "$(reaches --target all --all-features -p penlock)" \
     bitcoin-vision bitcoin-vision-core bitcoin-vision-forms penlock-scan
 
 phone="$(reaches --manifest-path example-android-app/rust/Cargo.toml \

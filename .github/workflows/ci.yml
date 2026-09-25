@@ -31,6 +31,8 @@ jobs:
         run: ci/package.sh
       - name: The layers as resolved
         run: ci/graph.sh
+      - name: The layer check refuses what it is for
+        run: ci/graph-test.sh
 
   # A green run here means the app compiles, its unit tests pass and it
   # packages. It does not mean the app was run: nothing on a hosted runner
