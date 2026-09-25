@@ -9,10 +9,10 @@
 
 use std::fmt;
 
-use image::GrayImage;
-use penlock::word::WORD_LEN;
-use penlock::Distribution;
 use crate::cells::{CELL_SIZE, CellImage};
+use image::GrayImage;
+use penlock::Distribution;
+use penlock::word::WORD_LEN;
 
 /// A recogniser for normalised cell images.
 pub trait Model {
@@ -169,7 +169,6 @@ pub(crate) fn softmax<const N: usize>(scores: [f32; N], temperature: f32) -> [f3
     weights.map(|w| w / sum)
 }
 
-
 /// Cells with nothing written in them, as `(word_index, position)`.
 pub(crate) fn empty_cells(cells: &[[CellImage; WORD_LEN]]) -> Vec<(usize, usize)> {
     cells
@@ -296,7 +295,7 @@ impl Onnx {
 }
 
 #[cfg(feature = "onnx")]
-pub(crate) use bitcoin_vision::runtime::run_plan;
+pub(crate) use bitcoin_vision_core::runtime::run_plan;
 
 #[cfg(feature = "onnx")]
 impl Model for Onnx {

@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bitcoin-vision = { package = "bitcoin-vision", path = "../../..", default-features = false }
+bitcoin-vision-core = { path = "../../../core" }
 bitcoin-vision-forms = { path = "../../../forms" }
 bitcoin_hashes = "0.14"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
@@ -23,7 +23,4 @@ serde_json = "1"
 default = []
 # The worksheets as PDFs for printing; the phone reads and never prints.
 print = ["bitcoin-vision-forms/print"]
-onnx = ["dep:tract-onnx", "word-extent", "bitcoin-vision/onnx"]
-word-extent = ["bitcoin-vision/word-extent"]
-scan-profile = ["bitcoin-vision/scan-profile"]
-extent-experiment = ["word-extent", "scan-profile", "bitcoin-vision/extent-experiment"]
+onnx = ["dep:tract-onnx", "bitcoin-vision-core/onnx"]

@@ -12,7 +12,7 @@
 
 use image::{GrayImage, Luma};
 
-use crate::homography::{Correspondence, Homography};
+use bitcoin_vision_core::homography::{Correspondence, Homography};
 use bitcoin_vision_forms::frame::{Blob, Frame, Integral, label_blobs};
 
 use crate::locate::{Anchors, LocateError, Located, trace};

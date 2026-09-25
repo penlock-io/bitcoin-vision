@@ -133,17 +133,13 @@ impl Scanner {
 /// Pixels a caller decoded themselves pass the same admission the decoder
 /// applies, so supplying RGB cannot reach past the shared limits.
 fn admit(image: &RgbImage) -> Result<(), ScanError> {
-    bitcoin_vision::check_dimensions(image.width(), image.height()).map_err(|e| match e {
-        bitcoin_vision::ScanError::Image(message) => ScanError::Image(message),
-        other => ScanError::Image(other.to_string()),
-    })
+    bitcoin_vision_core::check_dimensions(image.width(), image.height())
+        .map_err(|e| ScanError::Image(e.0))
 }
 
 fn decode(encoded: &[u8], options: ScanOptions) -> Result<RgbImage, ScanError> {
-    bitcoin_vision::decode_image(encoded, options.orientation).map_err(|e| match e {
-        bitcoin_vision::ScanError::Image(message) => ScanError::Image(message),
-        other => ScanError::Image(other.to_string()),
-    })
+    bitcoin_vision_core::decode_image(encoded, options.orientation)
+        .map_err(|e| ScanError::Image(e.0))
 }
 
 /// Native readings plus the photograph they came from.

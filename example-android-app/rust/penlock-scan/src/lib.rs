@@ -1,4 +1,6 @@
-//! Runtime share-card/worksheet support; BIP39 scanning is owned by bitcoin-vision.
+//! Reading Penlock share strips from photos: finding each strip, telling
+//! which one it is, and reading its cells. The BIP39 word pipeline is its
+//! sibling, `bitcoin-vision`; this crate does not depend on it.
 #![deny(missing_docs)]
 
 pub mod bare;
@@ -12,15 +14,9 @@ pub mod sheet;
 pub mod template;
 pub mod title;
 
-#[cfg(feature = "word-extent")]
-pub use bitcoin_vision::extent;
-pub use bitcoin_vision::{
-    boxes, detect, dot_grid, fragments, homography, hybrid, inference_limit, joins, layout,
-    numbering, page_frame, phrase, progress, recogniser, region, sources, split, timing, words,
-};
+pub use bitcoin_vision_core::Homography;
 pub use bitcoin_vision_forms::{Font, Jitter, Rect};
 pub use cells::{CellImage, crop_cell, crop_cells};
-pub use homography::Homography;
 pub use image;
 pub use imageproc;
 pub use locate::{

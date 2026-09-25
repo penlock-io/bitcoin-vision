@@ -27,9 +27,9 @@ ur = "0.4"
 [features]
 # The bindings generator CLI; only the app build needs it.
 bindgen = ["uniffi/cli"]
-scan-profile = ["penlock-scan/scan-profile", "bitcoin-vision/scan-profile"]
+scan-profile = ["bitcoin-vision/scan-profile"]
 # Historical baseline and diagnostic comparison only; normal app uses lean E3.
-extent-experiment = ["scan-profile", "penlock-scan/extent-experiment", "bitcoin-vision/extent-experiment"]
+extent-experiment = ["scan-profile", "bitcoin-vision/extent-experiment"]
 
 [[bin]]
 name = "uniffi-bindgen"
