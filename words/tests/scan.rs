@@ -29,7 +29,13 @@ fn a_scan_followed_from_another_thread_misses_nothing_and_ends_once() {
         let follower = scope.spawn(|| {
             let mut all = Vec::new();
             let mut cursor = Cursor::default();
+            // A record that never ends fails here rather than hanging the suite.
+            let deadline = std::time::Instant::now() + Duration::from_secs(120);
             loop {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the scan never ended its record"
+                );
                 let (new, at) = state.wait(cursor, Duration::from_millis(20));
                 cursor = at;
                 let ended = new.iter().any(Delta::is_terminal);
@@ -148,4 +154,41 @@ fn a_scan_cancelled_before_it_runs_reads_nothing_and_ends_cancelled() {
     let (deltas, _) = state.poll(Cursor::default());
     assert!(matches!(deltas.last(), Some(Delta::Cancelled)));
     assert!(!deltas.iter().any(|d| matches!(d, Delta::Region { .. })));
+}
+
+#[test]
+fn no_model_starts_inside_a_cancelled_scan() {
+    use bitcoin_vision_words::detect::{Detector, Quad};
+    use bitcoin_vision_words::phrase::{CROP_MARGIN, Reader, read_crop};
+    use bitcoin_vision_words::recogniser::Recogniser;
+    let models = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("models");
+    let bytes = |name: &str| std::fs::read(models.join(name)).unwrap();
+    let text = |name: &str| std::fs::read_to_string(models.join(name)).unwrap();
+    let detector = Detector::from_bytes(&bytes("word-detector.onnx")).unwrap();
+    let reader = Reader::from_bytes(
+        &bytes("word-reference.onnx"),
+        &text("word-reference.calibration"),
+    )
+    .unwrap();
+    let recogniser = Recogniser::from_bytes(
+        &bytes("text-recogniser.onnx"),
+        &text("text-recogniser.dict.txt"),
+    )
+    .unwrap();
+    let photo = photo();
+    let quad = Quad([(100., 100.), (400., 100.), (400., 180.), (100., 180.)]);
+    let crop = image::DynamicImage::ImageRgb8(photo.clone())
+        .crop_imm(100, 100, 300, 80)
+        .into_luma8();
+
+    let (emit, state) = bitcoin_vision_core::scan::record::<Words>();
+    let _cancellable = emit.cancellation().enter();
+    assert!(detector.detect(&photo).is_ok(), "runs before the cancel");
+    state.cancel();
+    let refused = |result: Result<(), String>| {
+        assert_eq!(result.unwrap_err(), "scan cancelled");
+    };
+    refused(detector.detect(&photo).map(drop));
+    refused(recogniser.read(&crop).map(drop));
+    refused(read_crop(&photo, &quad, &reader, None, CROP_MARGIN).map(drop));
 }

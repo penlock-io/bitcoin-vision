@@ -11,6 +11,7 @@
 //! The protocol is the same for every pipeline. What a phase, a region and a
 //! result are is the pipeline's, through [`Pipeline`].
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -79,6 +80,9 @@ pub enum Delta<P: Pipeline> {
     Failed(P::Error),
     /// The scan stopped because it was asked to. Nothing follows.
     Cancelled,
+    /// The scan stopped without ending: it was dropped before it ran, or its
+    /// thread unwound. Nothing follows.
+    Abandoned,
 }
 
 impl<P: Pipeline> Clone for Delta<P> {
@@ -114,6 +118,7 @@ impl<P: Pipeline> Clone for Delta<P> {
             Self::Finished(output) => Self::Finished(output.clone()),
             Self::Failed(error) => Self::Failed(error.clone()),
             Self::Cancelled => Self::Cancelled,
+            Self::Abandoned => Self::Abandoned,
         }
     }
 }
@@ -121,7 +126,10 @@ impl<P: Pipeline> Clone for Delta<P> {
 impl<P: Pipeline> Delta<P> {
     /// Whether this ends the scan.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Finished(_) | Self::Failed(_) | Self::Cancelled)
+        matches!(
+            self,
+            Self::Finished(_) | Self::Failed(_) | Self::Cancelled | Self::Abandoned
+        )
     }
 }
 
@@ -138,6 +146,8 @@ pub enum Outcome<P: Pipeline> {
     Failed(P::Error),
     /// It was asked to stop, and did.
     Cancelled,
+    /// It stopped without ending: dropped before it ran, or unwound.
+    Abandoned,
 }
 
 impl<P: Pipeline> Clone for Outcome<P> {
@@ -146,6 +156,7 @@ impl<P: Pipeline> Clone for Outcome<P> {
             Self::Finished(output) => Self::Finished(output.clone()),
             Self::Failed(error) => Self::Failed(error.clone()),
             Self::Cancelled => Self::Cancelled,
+            Self::Abandoned => Self::Abandoned,
         }
     }
 }
@@ -221,6 +232,7 @@ impl<P: Pipeline> Snapshot<P> {
             Delta::Finished(output) => self.outcome = Some(Outcome::Finished(output.clone())),
             Delta::Failed(error) => self.outcome = Some(Outcome::Failed(error.clone())),
             Delta::Cancelled => self.outcome = Some(Outcome::Cancelled),
+            Delta::Abandoned => self.outcome = Some(Outcome::Abandoned),
         }
         self.cursor.0 += 1;
     }
@@ -240,7 +252,7 @@ struct Record<P: Pipeline> {
 struct Shared<P: Pipeline> {
     record: Mutex<Record<P>>,
     grew: Condvar,
-    cancel: AtomicBool,
+    cancel: Cancellation,
 }
 
 impl<P: Pipeline> Shared<P> {
@@ -251,7 +263,10 @@ impl<P: Pipeline> Shared<P> {
     }
 }
 
-/// The producer's end: the only way a scan's record grows.
+/// The producer's end: the only way a scan's record grows. Dropping it
+/// before the record has ended ends it with [`Delta::Abandoned`], so a scan
+/// that is never run, or whose thread unwinds, still ends for everyone
+/// following it.
 pub struct Emitter<P: Pipeline> {
     shared: Arc<Shared<P>>,
 }
@@ -282,7 +297,7 @@ pub fn record<P: Pipeline>() -> (Emitter<P>, ScanState<P>) {
             folded: Snapshot::default(),
         }),
         grew: Condvar::new(),
-        cancel: AtomicBool::new(false),
+        cancel: Cancellation(Arc::new(AtomicBool::new(false))),
     });
     (
         Emitter {
@@ -310,7 +325,25 @@ impl<P: Pipeline> Emitter<P> {
     /// Whether a caller has asked the scan to stop. The scan checks this at
     /// its own boundaries and ends with [`Delta::Cancelled`] when it stops.
     pub fn cancel_requested(&self) -> bool {
-        self.shared.cancel.load(Ordering::Acquire)
+        self.shared.cancel.requested()
+    }
+
+    /// The scan's cancel request, to [`Cancellation::enter`] on each thread
+    /// that does its work.
+    pub fn cancellation(&self) -> Cancellation {
+        self.shared.cancel.clone()
+    }
+}
+
+impl<P: Pipeline> Drop for Emitter<P> {
+    fn drop(&mut self) {
+        let mut record = self.shared.lock();
+        if record.folded.outcome.is_none() {
+            record.folded.apply(&Delta::Abandoned);
+            record.deltas.push(Delta::Abandoned);
+        }
+        drop(record);
+        self.shared.grew.notify_all();
     }
 }
 
@@ -348,7 +381,74 @@ impl<P: Pipeline> ScanState<P> {
 
     /// Asks the scan to stop. A scan that has already ended keeps its outcome.
     pub fn cancel(&self) {
-        self.shared.cancel.store(true, Ordering::Release);
+        self.shared.cancel.0.store(true, Ordering::Release);
+    }
+}
+
+/// A scan's cancel request, as the threads doing its work see it.
+///
+/// Model inference is where a scan spends its time, and it is reached from
+/// every stage, so that is where cancellation is enforced: a thread that has
+/// entered a scan's cancellation refuses to start inference once the scan has
+/// been asked to stop ([`check`]). Inference already running finishes. A
+/// thread a scan spawns does not inherit this; whoever spawns it enters the
+/// scan's cancellation on it.
+#[derive(Clone, Debug)]
+pub struct Cancellation(Arc<AtomicBool>);
+
+thread_local! {
+    static CURRENT: RefCell<Option<Cancellation>> = const { RefCell::new(None) };
+}
+
+impl Cancellation {
+    /// Whether the scan has been asked to stop.
+    pub fn requested(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+
+    /// Makes this the cancellation [`check`] consults on this thread until the
+    /// returned guard drops.
+    pub fn enter(&self) -> Entered {
+        let previous = CURRENT.with(|c| c.replace(Some(self.clone())));
+        Entered { previous }
+    }
+}
+
+/// Restores the thread's previous cancellation when dropped.
+pub struct Entered {
+    previous: Option<Cancellation>,
+}
+
+impl Drop for Entered {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        CURRENT.with(|c| *c.borrow_mut() = previous);
+    }
+}
+
+/// The cancellation this thread has entered, to enter on a thread it spawns.
+pub fn current() -> Option<Cancellation> {
+    CURRENT.with(|c| c.borrow().clone())
+}
+
+/// Refused because the scan this thread works for was asked to stop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("scan cancelled")
+    }
+}
+
+impl std::error::Error for Cancelled {}
+
+/// Called before starting inference: refuses once this thread's scan has been
+/// asked to stop, and always passes on a thread that entered none.
+pub fn check() -> Result<(), Cancelled> {
+    match current() {
+        Some(c) if c.requested() => Err(Cancelled),
+        _ => Ok(()),
     }
 }
 
@@ -509,6 +609,62 @@ mod tests {
             assert_eq!(order, (0..250).collect::<Vec<_>>());
         }
         assert_eq!(state.snapshot().regions.len(), 1000);
+    }
+
+    #[test]
+    fn a_scan_dropped_before_it_ends_is_abandoned_for_everyone_following_it() {
+        let (emit, state) = record::<Test>();
+        emit.push(region(0, 0)).unwrap();
+        let follower = state.clone();
+        drop(emit);
+        assert!(matches!(state.snapshot().outcome, Some(Outcome::Abandoned)));
+        let (all, at) = follower.wait(Cursor::default(), Duration::from_secs(10));
+        assert!(matches!(all.last(), Some(Delta::Abandoned)));
+        let started = std::time::Instant::now();
+        let (none, _) = follower.wait(at, Duration::from_secs(10));
+        assert!(none.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_producer_that_unwinds_leaves_its_record_abandoned() {
+        let (emit, state) = record::<Test>();
+        let unwound = std::thread::spawn(move || {
+            emit.push(region(0, 0)).unwrap();
+            panic!("a stage failed badly");
+        })
+        .join();
+        assert!(unwound.is_err());
+        assert!(matches!(state.snapshot().outcome, Some(Outcome::Abandoned)));
+    }
+
+    #[test]
+    fn dropping_a_producer_that_ended_keeps_its_ending() {
+        let (emit, state) = record::<Test>();
+        emit.push(Delta::Failed("broke".into())).unwrap();
+        drop(emit);
+        assert!(matches!(state.snapshot().outcome, Some(Outcome::Failed(_))));
+        assert_eq!(state.poll(Cursor::default()).0.len(), 1);
+    }
+
+    #[test]
+    fn inference_is_refused_only_on_a_thread_that_entered_a_cancelled_scan() {
+        let (emit, state) = record::<Test>();
+        assert_eq!(check(), Ok(()));
+        let entered = emit.cancellation().enter();
+        assert_eq!(check(), Ok(()));
+        state.cancel();
+        assert_eq!(check(), Err(Cancelled));
+        std::thread::scope(|scope| {
+            scope.spawn(|| assert_eq!(check(), Ok(()), "nothing is inherited"));
+            let handed = current();
+            scope.spawn(move || {
+                let _entered = handed.unwrap().enter();
+                assert_eq!(check(), Err(Cancelled), "a handed-on cancellation");
+            });
+        });
+        drop(entered);
+        assert_eq!(check(), Ok(()), "the guard restores what was there");
     }
 
     #[test]

@@ -612,6 +612,7 @@ mod with_onnx {
             let plan = self.plan(width)?;
             let _infer = crate::timing::span("ocr.infer");
             crate::inference_limit::before(crate::inference_limit::Kind::Ocr)?;
+            bitcoin_vision_core::scan::check().map_err(|e| e.to_string())?;
             let result = plan
                 .run(tvec!(tensor.into()))
                 .map_err(|e| format!("{}: {e}", self.spec))?;

@@ -117,17 +117,7 @@ impl Event {
 pub trait Observer: Send + Sync {
     /// Observe one event without changing scan computation.
     fn on_event(&self, event: Event);
-
-    /// Whether the scan should stop before its next read. The one way an
-    /// observer affects a scan: no read starts once this is true, and the
-    /// scan ends with an error instead of a result.
-    fn cancelled(&self) -> bool {
-        false
-    }
 }
-
-/// The error a stage returns when it stopped because it was cancelled.
-pub(crate) const CANCELLED: &str = "scan cancelled";
 
 /// Lazily build an event only when an observer is present.
 ///
@@ -294,11 +284,6 @@ impl<'a> Stage<'a> {
         for (i, q) in quads.iter().enumerate() {
             self.region(i, q, RegionState::Found);
         }
-    }
-
-    /// Whether no further read should start.
-    pub(crate) fn cancelled(&self) -> bool {
-        self.observer.is_some_and(|o| o.cancelled())
     }
 
     /// Report the final checking phase after field reads.

@@ -7,6 +7,7 @@ pub fn run_plan(
     input: tract_onnx::prelude::Tensor,
 ) -> Result<Vec<f32>, String> {
     use tract_onnx::prelude::*;
+    crate::scan::check().map_err(|e| e.to_string())?;
     let result = plan.run(tvec!(input.into())).map_err(|e| e.to_string())?;
     let [only] = result.as_slice() else {
         return Err(format!(

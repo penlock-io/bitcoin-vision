@@ -472,15 +472,6 @@ impl<T> Pass<T> {
         read: impl FnOnce() -> Result<T, String>,
     ) {
         let shown = display(quad);
-        if progress.cancelled() {
-            self.record(
-                index,
-                &shown,
-                progress,
-                Err(crate::progress::CANCELLED.into()),
-            );
-            return;
-        }
         if !self.begin(index, &shown, progress) {
             return;
         }
@@ -567,9 +558,11 @@ fn read_at_once<T: Send>(
     let next = AtomicUsize::new(0);
     let shared = Mutex::new(pass);
     let samples = Mutex::new(Vec::new());
+    let cancellation = bitcoin_vision_core::scan::current();
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
+                let _cancellable = cancellation.as_ref().map(|c| c.enter());
                 // A worker's timings belong to the scan, not to the thread that
                 // happened to run them.
                 let _returned = ReturnSamples(&samples);
@@ -579,18 +572,6 @@ fn read_at_once<T: Send>(
                         return;
                     };
                     let shown = display(quad);
-                    if progress.cancelled() {
-                        shared
-                            .lock()
-                            .expect("a read cannot poison the pass")
-                            .record(
-                                index,
-                                &shown,
-                                progress,
-                                Err(crate::progress::CANCELLED.into()),
-                            );
-                        continue;
-                    }
                     if !shared
                         .lock()
                         .expect("a read cannot poison the pass")

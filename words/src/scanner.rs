@@ -116,7 +116,9 @@ impl Scanner {
                 Ok(Arc::try_unwrap(result).unwrap_or_else(|r| (*r).clone()))
             }
             Outcome::Failed(error) => Err(error),
-            Outcome::Cancelled => unreachable!("nothing else holds this scan's state to cancel it"),
+            Outcome::Cancelled | Outcome::Abandoned => {
+                unreachable!("nothing else holds this scan's state, and it ran to its end")
+            }
         }
     }
 
@@ -200,6 +202,7 @@ impl Scan<'_> {
     /// Runs the scan to its end on this thread and returns how it ended,
     /// which is also the last thing its [`ScanState`] records.
     pub fn run(self) -> Outcome<Words> {
+        let _cancellable = self.emitter.cancellation().enter();
         let recorder = Recorder(&self.emitter);
         let outcome: Outcome<Words> = match self.read(&recorder) {
             _ if self.emitter.cancel_requested() => Outcome::Cancelled,
@@ -210,6 +213,7 @@ impl Scan<'_> {
             Outcome::Finished(result) => Delta::Finished(Arc::clone(result)),
             Outcome::Failed(error) => Delta::Failed(error.clone()),
             Outcome::Cancelled => Delta::Cancelled,
+            Outcome::Abandoned => unreachable!("run ends the scan itself"),
         };
         self.emitter
             .push(delta)
@@ -223,7 +227,9 @@ impl Scan<'_> {
         let (photo, scanner) = (&self.photo, self.scanner);
         let stop = || {
             if self.emitter.cancel_requested() {
-                Err(ScanError::Processing(crate::progress::CANCELLED.into()))
+                Err(ScanError::Processing(
+                    bitcoin_vision_core::scan::Cancelled.to_string(),
+                ))
             } else {
                 Ok(())
             }
@@ -291,8 +297,7 @@ impl Scan<'_> {
     }
 }
 
-/// Carries the stages' progress into the scan's record, and the record's
-/// cancel request back to the stages.
+/// Carries the stages' progress into the scan's record.
 struct Recorder<'a>(&'a Emitter<Words>);
 
 impl crate::progress::Observer for Recorder<'_> {
@@ -329,10 +334,6 @@ impl crate::progress::Observer for Recorder<'_> {
             Event::Finished { .. } | Event::Failed => return,
         };
         let _ = self.0.push(delta);
-    }
-
-    fn cancelled(&self) -> bool {
-        self.0.cancel_requested()
     }
 }
 
