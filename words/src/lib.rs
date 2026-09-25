@@ -105,8 +105,10 @@ pub use scanner::{
 pub use split::Frame;
 pub use vocabulary::Word;
 
-/// A build without `research` cannot reach a stage. Each of these fails to
-/// compile, and the scan it runs them through does not:
+/// A build without `research` cannot reach a stage, whether through a stage
+/// module, a public module's function, or a method on a type the result
+/// re-exports. Each of these fails to compile, and the scan they run inside
+/// does not:
 ///
 /// ```compile_fail
 /// let _ = bitcoin_vision_words::phrase::read_words_observed;
@@ -125,6 +127,21 @@ pub use vocabulary::Word;
 /// ```
 /// ```compile_fail
 /// let _ = bitcoin_vision_words::numbering::fit;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::PageLayout::new;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::hybrid::select_bounded;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::Reader::load;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::detect::Detector::probability_map_with_limit;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::progress::Stage::geometry;
 /// ```
 /// ```
 /// let _ = bitcoin_vision_words::Scanner::start;

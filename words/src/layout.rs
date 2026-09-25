@@ -55,14 +55,18 @@ impl PageLayout {
         let words = blocks.into_iter().max_by_key(Vec::len)?;
         (words.len() >= 2).then_some((words, h))
     }
-    /// Runs the existing centre-in-span grouping on both axes once.
-    pub fn new(quads: &[Quad]) -> Self {
-        Self::with_writing(quads, WritingFrame::Local)
+    stage! {
+        /// Runs the existing centre-in-span grouping on both axes once.
+        pub fn new(quads: &[Quad]) -> Self {
+            Self::with_writing(quads, WritingFrame::Local)
+        }
     }
 
-    /// Group in page writing coordinates while retaining the original indices.
-    pub fn in_direction(quads: &[Quad], direction: Direction) -> Self {
-        Self::with_writing(quads, WritingFrame::Page(direction))
+    stage! {
+        /// Group in page writing coordinates while retaining the original indices.
+        pub fn in_direction(quads: &[Quad], direction: Direction) -> Self {
+            Self::with_writing(quads, WritingFrame::Page(direction))
+        }
     }
 
     pub(crate) fn with_writing(quads: &[Quad], writing: WritingFrame) -> Self {
@@ -85,10 +89,12 @@ impl PageLayout {
         self.rows.iter().flatten().copied().collect()
     }
 
-    /// Reindexes existing evidence to a permutation without clustering again.
-    pub fn reindexed(&self, order: &[usize]) -> Self {
-        assert_eq!(order.len(), self.bounds.len());
-        self.selected(order)
+    stage! {
+        /// Reindexes existing evidence to a permutation without clustering again.
+        pub fn reindexed(&self, order: &[usize]) -> Self {
+            assert_eq!(order.len(), self.bounds.len());
+            self.selected(order)
+        }
     }
 
     /// Retains selected observations in the supplied order, preserving their

@@ -11,11 +11,11 @@ pub mod scoring;
 mod selection;
 #[cfg(not(feature = "research"))]
 pub(crate) use selection::select;
-#[cfg(feature = "research")]
-pub use selection::select;
 pub use selection::{
-    Branch, Candidate, Confirmation, Selection, SelectionError, Support, TextSource, select_bounded,
+    Branch, Candidate, Confirmation, Selection, SelectionError, Support, TextSource,
 };
+#[cfg(feature = "research")]
+pub use selection::{select, select_bounded};
 
 /// The pinned edit weights and budget.
 #[derive(Clone, Copy, Debug, PartialEq)]

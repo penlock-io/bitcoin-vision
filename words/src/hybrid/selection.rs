@@ -309,6 +309,7 @@ stage! {
 }
 
 /// Historical bounded-log10-v1 for saved comparisons, not product selection.
+#[cfg(any(test, feature = "research"))]
 pub fn select_bounded(
     literal: Option<&str>,
     matching: Option<&str>,

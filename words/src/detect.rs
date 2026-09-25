@@ -94,13 +94,15 @@ impl Detector {
         Err("the detector needs a build with penlock-scan's onnx feature".into())
     }
 
-    /// Refuses: no runtime in this build.
-    pub fn probability_map_with_limit(
-        &self,
-        _photo: &RgbImage,
-        _limit: u32,
-    ) -> Result<ProbabilityMap, String> {
-        Err("the detector needs a build with penlock-scan's onnx feature".into())
+    stage! {
+        /// Refuses: no runtime in this build.
+        pub fn probability_map_with_limit(
+            &self,
+            _photo: &RgbImage,
+            _limit: u32,
+        ) -> Result<ProbabilityMap, String> {
+            Err("the detector needs a build with penlock-scan's onnx feature".into())
+        }
     }
 
     /// Refuses: no runtime in this build.
@@ -167,54 +169,56 @@ impl Detector {
         self.probability_map_with_limit(photo, LIMIT)
     }
 
-    /// The same detector with an explicit long-side limit, for controlled
-    /// offline studies. The app uses [`Self::probability_map`] and [`LIMIT`].
-    /// Limits outside 32..=2048 are refused to bound diagnostic input shapes.
-    pub fn probability_map_with_limit(
-        &self,
-        photo: &RgbImage,
-        limit: u32,
-    ) -> Result<ProbabilityMap, String> {
-        if !(32..=2048).contains(&limit) {
-            return Err("detector long-side limit must be in 32..=2048".into());
-        }
-        let _input = crate::timing::span("detector.input");
-        let (w, h) = photo.dimensions();
-        let scale = (limit as f32 / w.max(h) as f32).min(1.0);
-        // ties go to even, as the survey's Python `round` does, so the
-        // two runtimes see the same input shape
-        let round32 = |v: f32| (((v / 32.0).round_ties_even() as u32) * 32).max(32);
-        let (rw, rh) = (round32(w as f32 * scale), round32(h as f32 * scale));
-        let resized = image::imageops::resize(photo, rw, rh, image::imageops::FilterType::Triangle);
-        let (rw, rh) = (rw as usize, rh as usize);
-        let mut input = vec![0f32; 3 * rh * rw];
-        for (x, y, p) in resized.enumerate_pixels() {
-            for c in 0..3 {
-                input[c * rh * rw + y as usize * rw + x as usize] =
-                    (p.0[c] as f32 / 255.0 - MEAN[c]) / STD[c];
+    stage! {
+        /// The same detector with an explicit long-side limit, for controlled
+        /// offline studies. The app uses [`Self::probability_map`] and [`LIMIT`].
+        /// Limits outside 32..=2048 are refused to bound diagnostic input shapes.
+        pub fn probability_map_with_limit(
+            &self,
+            photo: &RgbImage,
+            limit: u32,
+        ) -> Result<ProbabilityMap, String> {
+            if !(32..=2048).contains(&limit) {
+                return Err("detector long-side limit must be in 32..=2048".into());
             }
+            let _input = crate::timing::span("detector.input");
+            let (w, h) = photo.dimensions();
+            let scale = (limit as f32 / w.max(h) as f32).min(1.0);
+            // ties go to even, as the survey's Python `round` does, so the
+            // two runtimes see the same input shape
+            let round32 = |v: f32| (((v / 32.0).round_ties_even() as u32) * 32).max(32);
+            let (rw, rh) = (round32(w as f32 * scale), round32(h as f32 * scale));
+            let resized = image::imageops::resize(photo, rw, rh, image::imageops::FilterType::Triangle);
+            let (rw, rh) = (rw as usize, rh as usize);
+            let mut input = vec![0f32; 3 * rh * rw];
+            for (x, y, p) in resized.enumerate_pixels() {
+                for c in 0..3 {
+                    input[c * rh * rw + y as usize * rw + x as usize] =
+                        (p.0[c] as f32 / 255.0 - MEAN[c]) / STD[c];
+                }
+            }
+            use tract_onnx::prelude::*;
+            let tensor = Tensor::from_shape(&[1, 3, rh, rw], &input).map_err(|e| e.to_string())?;
+            drop(_input);
+            let plan = self.plan(rh, rw)?;
+            let _infer = crate::timing::span("detector.infer");
+            let data = crate::runtime::run_plan(&plan, tensor)?;
+            drop(_infer);
+            if data.len() != rh * rw {
+                return Err(format!(
+                    "{}: the map has {} values for a {rw}×{rh} input",
+                    self.spec,
+                    data.len()
+                ));
+            }
+            Ok(ProbabilityMap {
+                width: rw,
+                height: rh,
+                data,
+                photo_width: w,
+                photo_height: h,
+            })
         }
-        use tract_onnx::prelude::*;
-        let tensor = Tensor::from_shape(&[1, 3, rh, rw], &input).map_err(|e| e.to_string())?;
-        drop(_input);
-        let plan = self.plan(rh, rw)?;
-        let _infer = crate::timing::span("detector.infer");
-        let data = crate::runtime::run_plan(&plan, tensor)?;
-        drop(_infer);
-        if data.len() != rh * rw {
-            return Err(format!(
-                "{}: the map has {} values for a {rw}×{rh} input",
-                self.spec,
-                data.len()
-            ));
-        }
-        Ok(ProbabilityMap {
-            width: rw,
-            height: rh,
-            data,
-            photo_width: w,
-            photo_height: h,
-        })
     }
 
     /// The text regions of the photo as quads in photo pixels.
@@ -285,65 +289,67 @@ impl ProbabilityMap {
             .expect("the locked threshold is valid")
     }
 
-    /// DB postprocessing at an explicit text-pixel threshold for offline
-    /// studies. Region scoring and box growth stay unchanged. This is a
-    /// plain lower threshold, not hysteresis with a separate high seed.
-    /// Non-finite thresholds and values outside [0, 1] are refused.
-    pub fn quads_with_threshold(&self, threshold: f32) -> Result<Vec<Quad>, String> {
-        if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
-            return Err("detector threshold must be finite and in [0, 1]".into());
+    stage! {
+        /// DB postprocessing at an explicit text-pixel threshold for offline
+        /// studies. Region scoring and box growth stay unchanged. This is a
+        /// plain lower threshold, not hysteresis with a separate high seed.
+        /// Non-finite thresholds and values outside [0, 1] are refused.
+        pub fn quads_with_threshold(&self, threshold: f32) -> Result<Vec<Quad>, String> {
+            if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
+                return Err("detector threshold must be finite and in [0, 1]".into());
+            }
+            let _post = crate::timing::span("detector.postprocess");
+            let (w, h) = (self.width as u32, self.height as u32);
+            let mut binary = GrayImage::new(w, h);
+            for (i, p) in self.data.iter().enumerate() {
+                if *p > threshold {
+                    binary.put_pixel(
+                        (i % self.width) as u32,
+                        (i / self.width) as u32,
+                        Luma([255]),
+                    );
+                }
+            }
+            let sx = self.photo_width as f32 / w as f32;
+            let sy = self.photo_height as f32 / h as f32;
+            let mut out = Vec::new();
+            for contour in find_contours::<i32>(&binary) {
+                if contour.border_type != BorderType::Outer || contour.points.len() < 3 {
+                    continue;
+                }
+                let mut points = contour.points.clone();
+                if points.first() == points.last() {
+                    points.pop();
+                }
+                if points.len() < 3 {
+                    continue;
+                }
+                let Some(score) = self.region_score(&points) else {
+                    continue;
+                };
+                if score < BOX_THRESH {
+                    continue;
+                }
+                let fpoints: Vec<Point<f32>> = points
+                    .iter()
+                    .map(|p| Point::new(p.x as f32, p.y as f32))
+                    .collect();
+                let area = contour_area(&fpoints) as f32;
+                let perimeter = arc_length(&fpoints, true) as f32;
+                if perimeter <= 0.0 {
+                    continue;
+                }
+                let grow = area * UNCLIP / perimeter;
+                let rect = min_area_rect(&unclipped(&fpoints, grow));
+                let side =
+                    |a: Point<f32>, b: Point<f32>| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+                if side(rect[0], rect[1]).min(side(rect[1], rect[2])) < MIN_SIDE {
+                    continue;
+                }
+                out.push(Quad(clockwise(rect.map(|p| (p.x * sx, p.y * sy)))));
+            }
+            Ok(out)
         }
-        let _post = crate::timing::span("detector.postprocess");
-        let (w, h) = (self.width as u32, self.height as u32);
-        let mut binary = GrayImage::new(w, h);
-        for (i, p) in self.data.iter().enumerate() {
-            if *p > threshold {
-                binary.put_pixel(
-                    (i % self.width) as u32,
-                    (i / self.width) as u32,
-                    Luma([255]),
-                );
-            }
-        }
-        let sx = self.photo_width as f32 / w as f32;
-        let sy = self.photo_height as f32 / h as f32;
-        let mut out = Vec::new();
-        for contour in find_contours::<i32>(&binary) {
-            if contour.border_type != BorderType::Outer || contour.points.len() < 3 {
-                continue;
-            }
-            let mut points = contour.points.clone();
-            if points.first() == points.last() {
-                points.pop();
-            }
-            if points.len() < 3 {
-                continue;
-            }
-            let Some(score) = self.region_score(&points) else {
-                continue;
-            };
-            if score < BOX_THRESH {
-                continue;
-            }
-            let fpoints: Vec<Point<f32>> = points
-                .iter()
-                .map(|p| Point::new(p.x as f32, p.y as f32))
-                .collect();
-            let area = contour_area(&fpoints) as f32;
-            let perimeter = arc_length(&fpoints, true) as f32;
-            if perimeter <= 0.0 {
-                continue;
-            }
-            let grow = area * UNCLIP / perimeter;
-            let rect = min_area_rect(&unclipped(&fpoints, grow));
-            let side =
-                |a: Point<f32>, b: Point<f32>| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
-            if side(rect[0], rect[1]).min(side(rect[1], rect[2])) < MIN_SIDE {
-                continue;
-            }
-            out.push(Quad(clockwise(rect.map(|p| (p.x * sx, p.y * sy)))));
-        }
-        Ok(out)
     }
 
     /// The mean probability inside the region's filled outline.

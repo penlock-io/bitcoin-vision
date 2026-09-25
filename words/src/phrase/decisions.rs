@@ -21,9 +21,11 @@ impl DecisionTrace {
         json!({"schema":"penlock-word-decisions-v1", "events":self.events})
     }
 
-    pub fn push(trace: &mut Option<Self>, event: impl FnOnce() -> Value) {
-        if let Some(trace) = trace {
-            trace.events.push(event());
+    stage! {
+        pub fn push(trace: &mut Option<Self>, event: impl FnOnce() -> Value) {
+            if let Some(trace) = trace {
+                trace.events.push(event());
+            }
         }
     }
 

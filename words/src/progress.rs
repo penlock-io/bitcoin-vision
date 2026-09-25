@@ -199,19 +199,21 @@ pub fn work(observer: Option<&dyn Observer>, phase: Phase, completed: u32, total
     });
 }
 
-/// Stage-owned identities in allocation order. Each owner of a word
-/// permutation (joins, then extent) updates the current indices in place.
-#[doc(hidden)]
-pub struct Stage<'a> {
-    observer: Option<&'a dyn Observer>,
-    regions: Vec<FinalRegion>,
-    total: u32,
-    next_id: RegionId,
-    reading_started: bool,
+stage! {
+    /// Stage-owned identities in allocation order. Each owner of a word
+    /// permutation (joins, then extent) updates the current indices in place.
+    pub struct Stage<'a> {
+        observer: Option<&'a dyn Observer>,
+        regions: Vec<FinalRegion>,
+        total: u32,
+        next_id: RegionId,
+        reading_started: bool,
+    }
 }
 
 impl<'a> Stage<'a> {
     /// Begin progress for a caller-owned fixed-field layout.
+    #[cfg(any(test, feature = "research"))]
     pub fn new(observer: Option<&'a dyn Observer>, count: usize) -> Self {
         let mut stage = Self::geometry(observer, count);
         stage.reading();

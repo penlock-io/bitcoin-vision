@@ -595,23 +595,27 @@ impl Reader {
         Reader::bind(model, Calibration::parse(calibration)?)
     }
 
-    /// [`Reader::bind`] with the model file at `model`; its errors
-    /// name the file.
-    pub fn open(model: &Path, calibration: Calibration) -> Result<Reader, String> {
-        let named = |e: String| format!("{}: {e}", model.display());
-        let bytes = std::fs::read(model).map_err(|e| named(e.to_string()))?;
-        Reader::bind(&bytes, calibration).map_err(named)
+    stage! {
+        /// [`Reader::bind`] with the model file at `model`; its errors
+        /// name the file.
+        pub fn open(model: &Path, calibration: Calibration) -> Result<Reader, String> {
+            let named = |e: String| format!("{}: {e}", model.display());
+            let bytes = std::fs::read(model).map_err(|e| named(e.to_string()))?;
+            Reader::bind(&bytes, calibration).map_err(named)
+        }
     }
 
-    /// [`Reader::open`] with the calibration file read and checked
-    /// first, so a bad artifact is reported whether or not the model
-    /// exists.
-    pub fn load(model: &Path, calibration: &Path) -> Result<Reader, String> {
-        let text = std::fs::read_to_string(calibration)
-            .map_err(|e| format!("{}: {e}", calibration.display()))?;
-        let calibration =
-            Calibration::parse(&text).map_err(|e| format!("{}: {e}", calibration.display()))?;
-        Reader::open(model, calibration)
+    stage! {
+        /// [`Reader::open`] with the calibration file read and checked
+        /// first, so a bad artifact is reported whether or not the model
+        /// exists.
+        pub fn load(model: &Path, calibration: &Path) -> Result<Reader, String> {
+            let text = std::fs::read_to_string(calibration)
+                .map_err(|e| format!("{}: {e}", calibration.display()))?;
+            let calibration =
+                Calibration::parse(&text).map_err(|e| format!("{}: {e}", calibration.display()))?;
+            Reader::open(model, calibration)
+        }
     }
 
     /// The model.
