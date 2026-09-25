@@ -91,6 +91,17 @@ impl Scanner {
             dictionary: include_str!("../models/text-recogniser.dict.txt"),
         })
     }
+    /// A scanner over models the caller already built, for a caller that
+    /// loads them its own way: the phone prepares its recogniser for its
+    /// hardware, the research harness picks its own files.
+    pub fn from_models(detector: Detector, reader: Reader, recogniser: Recogniser) -> Self {
+        Self {
+            detector,
+            reader,
+            recogniser,
+        }
+    }
+
     /// Loads the complete model set, validating the classifier calibration.
     pub fn new(models: ModelBytes<'_>) -> Result<Self, ScanError> {
         Ok(Self {
