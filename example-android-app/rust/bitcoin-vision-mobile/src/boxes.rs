@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use bitcoin_vision::{boxes as core, progress};
+use bitcoin_vision_words::{boxes as core, progress};
 
 use crate::{ProgressDeliveryError, ScanRegion, ScanWorkPhase, VisionError};
 
@@ -233,7 +233,12 @@ mod tests {
             height: 80,
             boxes: vec![core::FinalBox {
                 id: 7,
-                quad: bitcoin_vision::detect::Quad([(1.25, 2.5), (30., 1.), (32., 12.), (2., 13.)]),
+                quad: bitcoin_vision_words::detect::Quad([
+                    (1.25, 2.5),
+                    (30., 1.),
+                    (32., 12.),
+                    (2., 13.),
+                ]),
             }],
         }
     }

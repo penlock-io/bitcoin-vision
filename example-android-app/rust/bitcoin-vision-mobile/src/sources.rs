@@ -1,7 +1,7 @@
 //! Geometry-only detector provenance. Unread ink is never a WordReading.
 
-use bitcoin_vision::fragments::{Decision, Ownership};
-use bitcoin_vision::sources::{Outcome, RawSource};
+use bitcoin_vision_words::fragments::{Decision, Ownership};
+use bitcoin_vision_words::sources::{Outcome, RawSource};
 
 /// One original split part, whether or not it was eligible for reading.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -65,7 +65,7 @@ pub struct DetectionSource {
     pub union: Option<DetectionUnion>,
 }
 
-fn corners(q: &bitcoin_vision::detect::Quad) -> Vec<f32> {
+fn corners(q: &bitcoin_vision_words::detect::Quad) -> Vec<f32> {
     q.0.iter().flat_map(|&(x, y)| [x, y]).collect()
 }
 
@@ -143,10 +143,10 @@ pub(crate) fn pack(sources: &[RawSource]) -> Vec<DetectionSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision::detect::Quad;
-    use bitcoin_vision::fragments::{Observation, Scale};
-    use bitcoin_vision::sources::{Part, Union};
-    use bitcoin_vision::split::EmptySplit;
+    use bitcoin_vision_words::detect::Quad;
+    use bitcoin_vision_words::fragments::{Observation, Scale};
+    use bitcoin_vision_words::sources::{Part, Union};
+    use bitcoin_vision_words::split::EmptySplit;
 
     #[test]
     fn geometry_only_and_rescued_sources_keep_distinct_links_through_packing() {

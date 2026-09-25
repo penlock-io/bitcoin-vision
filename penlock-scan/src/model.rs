@@ -30,7 +30,7 @@ pub trait Model {
     fn spec(&self) -> String;
 }
 
-/// What a model made of a card's cells. [`crate::scan()`] checks the
+/// What a model made of a card's cells. [`crate::scan::scan()`] checks the
 /// contract below before trusting it; see [`CellReadings::validate`].
 #[derive(Clone, PartialEq, Debug)]
 pub struct CellReadings {

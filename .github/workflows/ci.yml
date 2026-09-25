@@ -19,11 +19,18 @@ jobs:
       - name: The Penlock pipeline on its own default features
         run: cargo +stable test --locked -p penlock-scan --tests
       - name: Example renderer
-        run: cargo +stable test --locked --features bundled-models --example scan
+        run: cargo +stable test --locked -p bitcoin-vision-words --features bundled-models --example scan
       - name: No-runtime API
-        run: cargo +stable check --locked --no-default-features
+        run: cargo +stable check --locked -p bitcoin-vision-words --no-default-features
+      # The facade forwards its switches without turning a pipeline on, so
+      # each pipeline alone, and neither, must build through it.
+      - name: The facade with one pipeline, the other, and neither
+        run: |
+          cargo +stable check --locked -p bitcoin-vision --no-default-features --features words,onnx
+          cargo +stable check --locked -p bitcoin-vision --no-default-features --features penlock,onnx
+          cargo +stable check --locked -p bitcoin-vision --no-default-features --features onnx,print
       - name: Public documentation
-        run: cargo +stable doc --locked --no-deps --features bundled-models
+        run: cargo +stable doc --locked --workspace --no-deps --all-features
       # The packages exclude the app tree, so a test that reaches into it
       # passes above and fails for whoever installs the crate. See the script
       # for why it packages a staged copy rather than the checkout.

@@ -45,9 +45,7 @@ fn strip() -> image::RgbImage {
 
 fn encoded(image: &image::RgbImage) -> Vec<u8> {
     let mut bytes = std::io::Cursor::new(Vec::new());
-    image
-        .write_to(&mut bytes, image::ImageFormat::Png)
-        .unwrap();
+    image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
     bytes.into_inner()
 }
 
@@ -133,8 +131,7 @@ fn pixels_the_caller_decoded_meet_the_same_limits() {
 #[cfg(feature = "onnx")]
 #[test]
 fn the_shipped_classifier_loads_from_bytes() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("models/cell-reference.onnx");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("models/cell-reference.onnx");
     let scanner = Scanner::new(penlock_scan::ModelBytes {
         cells: &std::fs::read(path).unwrap(),
     })

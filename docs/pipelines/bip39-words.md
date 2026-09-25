@@ -64,7 +64,7 @@ artifacts, `scan` takes encoded bytes and `scan_rgb` takes canonical pixels,
 and `ScanResult::document()` is a serializable projection of decisions already
 made — it does not re-run inference or re-assign boxes.
 
-The models are in [`models/`](../../models/README.md) with their digests.
+The models are in [`words/models/`](../../words/models/README.md) with their digests.
 
 ## Limits
 

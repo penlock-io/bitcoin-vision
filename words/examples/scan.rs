@@ -1,6 +1,6 @@
-//! Usage: cargo run --release --features bundled-models --example scan -- photo.jpg new-output-dir
+//! Usage: cargo run --release -p bitcoin-vision-words --features bundled-models --example scan -- photo.jpg new-output-dir
 use base64::Engine as _;
-use bitcoin_vision::{ScanOptions, ScanResult, Scanner, decode_image};
+use bitcoin_vision_words::{ScanOptions, ScanResult, Scanner, decode_image};
 use std::{error::Error, fmt::Write as _, path::PathBuf};
 
 const ACCEPTED: [u8; 3] = [0, 170, 114];
@@ -35,7 +35,7 @@ fn accepted(scan: &ScanResult, observation: usize) -> bool {
     scan.page.words[observation]
         .selection
         .as_ref()
-        .is_some_and(|s| s.confirmation() == bitcoin_vision::hybrid::Confirmation::Accepted)
+        .is_some_and(|s| s.confirmation() == bitcoin_vision_words::hybrid::Confirmation::Accepted)
 }
 
 fn ink(color: [u8; 3]) -> String {
@@ -205,7 +205,7 @@ fn the_readme_overlay_is_what_this_example_renders_today() {
         .count();
     assert_eq!(
         moved, 0,
-        "docs/images/handwritten-boxes.png is stale: regenerate it with \
-         `cargo run --release --features bundled-models --example scan`"
+        "words/docs/images/handwritten-boxes.png is stale: regenerate it with \
+         `cargo run --release -p bitcoin-vision-words --features bundled-models --example scan`"
     );
 }

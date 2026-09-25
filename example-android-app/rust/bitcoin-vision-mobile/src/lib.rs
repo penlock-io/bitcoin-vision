@@ -19,11 +19,11 @@ use bdk_wallet::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::template::{Bip86, DescriptorTemplate};
-use bitcoin_vision::detect::Detector;
-use bitcoin_vision::phrase::{CROP_MARGIN, Reader, read_words_observed};
-use bitcoin_vision::progress::{Event, FinalRegion, Observer, Phase, emit, work};
-use bitcoin_vision::recogniser::{Preparation, Recogniser};
-use bitcoin_vision::words::Verdict;
+use bitcoin_vision_words::detect::Detector;
+use bitcoin_vision_words::phrase::{CROP_MARGIN, Reader, read_words_observed};
+use bitcoin_vision_words::progress::{Event, FinalRegion, Observer, Phase, emit, work};
+use bitcoin_vision_words::recogniser::{Preparation, Recogniser};
+use bitcoin_vision_words::words::Verdict;
 use penlock::soft::combine;
 use penlock::soft::search::{Bip39Checksum, Filter, Floor, Outcome, search, slots};
 use penlock::word::symbols_to_string;
@@ -343,22 +343,22 @@ pub struct WordReading {
     pub expanded_from: Vec<ExtentParent>,
 }
 
-impl TryFrom<&bitcoin_vision::phrase::WordBox> for WordReading {
+impl TryFrom<&bitcoin_vision_words::phrase::WordBox> for WordReading {
     type Error = VisionError;
 
-    fn try_from(w: &bitcoin_vision::phrase::WordBox) -> Result<Self, Self::Error> {
+    fn try_from(w: &bitcoin_vision_words::phrase::WordBox) -> Result<Self, Self::Error> {
         let chosen = w
             .pick()
             .and_then(|p| Word::from_index(p as u16))
             .ok_or_else(|| VisionError::Scan {
                 detail: "word observation has no selection".into(),
             })?;
-        let _png = bitcoin_vision::timing::span("mobile.crop_png");
+        let _png = bitcoin_vision_words::timing::span("mobile.crop_png");
         let mut crop_png = Vec::new();
         w.crop
             .write_to(
                 &mut std::io::Cursor::new(&mut crop_png),
-                bitcoin_vision::image::ImageFormat::Png,
+                bitcoin_vision_words::image::ImageFormat::Png,
             )
             .map_err(|e| VisionError::Scan {
                 detail: e.to_string(),
@@ -389,7 +389,7 @@ impl TryFrom<&bitcoin_vision::phrase::WordBox> for WordReading {
                     r.crop
                         .write_to(
                             &mut std::io::Cursor::new(&mut crop_png),
-                            bitcoin_vision::image::ImageFormat::Png,
+                            bitcoin_vision_words::image::ImageFormat::Png,
                         )
                         .map_err(|e| VisionError::Scan {
                             detail: e.to_string(),
@@ -491,12 +491,12 @@ pub enum InitialOrder {
     Columns,
 }
 
-impl From<bitcoin_vision::phrase::InitialOrder> for InitialOrder {
-    fn from(value: bitcoin_vision::phrase::InitialOrder) -> Self {
+impl From<bitcoin_vision_words::phrase::InitialOrder> for InitialOrder {
+    fn from(value: bitcoin_vision_words::phrase::InitialOrder) -> Self {
         match value {
-            bitcoin_vision::phrase::InitialOrder::Numbers => Self::Numbers,
-            bitcoin_vision::phrase::InitialOrder::Rows => Self::Rows,
-            bitcoin_vision::phrase::InitialOrder::Columns => Self::Columns,
+            bitcoin_vision_words::phrase::InitialOrder::Numbers => Self::Numbers,
+            bitcoin_vision_words::phrase::InitialOrder::Rows => Self::Rows,
+            bitcoin_vision_words::phrase::InitialOrder::Columns => Self::Columns,
         }
     }
 }
@@ -612,7 +612,7 @@ impl PhraseScanner {
         recogniser: Vec<u8>,
         dictionary: String,
     ) -> Result<Self, VisionError> {
-        let _init = bitcoin_vision::timing::span("mobile.init");
+        let _init = bitcoin_vision_words::timing::span("mobile.init");
         Self::build(
             detector,
             model,
@@ -745,7 +745,7 @@ impl PhraseScanner {
 enum ExtentOutput<'a> {
     Baseline,
     Diagnostic(&'a mut String),
-    Lean(&'a mut Option<bitcoin_vision::extent::Report>),
+    Lean(&'a mut Option<bitcoin_vision_words::extent::Report>),
 }
 
 impl PhraseScanner {
@@ -755,7 +755,7 @@ impl PhraseScanner {
         orientation: u8,
         callback: Option<Box<dyn BoxObserver>>,
     ) -> Result<BoxScan, VisionError> {
-        let _total = bitcoin_vision::timing::span("mobile.total");
+        let _total = bitcoin_vision_words::timing::span("mobile.total");
         let observer = boxes::Callback::new(callback);
         observer.complete(|| {
             // Some(observer) keeps the stage-owned ID mapping even without a
@@ -768,7 +768,7 @@ impl PhraseScanner {
                 None,
             )?;
             work(Some(&observer), Phase::Packing, 0, None);
-            bitcoin_vision::boxes::BoxScan::from_page(&scan, &regions)
+            bitcoin_vision_words::boxes::BoxScan::from_page(&scan, &regions)
                 .map_err(|detail| VisionError::Scan { detail })
         })
     }
@@ -781,7 +781,7 @@ impl PhraseScanner {
         photo: Vec<u8>,
         use_extent: bool,
     ) -> Result<(PhraseScan, String), VisionError> {
-        let _total = bitcoin_vision::timing::span("mobile.total");
+        let _total = bitcoin_vision_words::timing::span("mobile.total");
         let mut report = String::new();
         let (scan, _) = self.scan_inner(
             photo,
@@ -803,8 +803,8 @@ impl PhraseScanner {
         &self,
         photo: Vec<u8>,
         use_extent: bool,
-    ) -> Result<(PhraseScan, Option<bitcoin_vision::extent::Report>), VisionError> {
-        let _total = bitcoin_vision::timing::span("mobile.total");
+    ) -> Result<(PhraseScan, Option<bitcoin_vision_words::extent::Report>), VisionError> {
+        let _total = bitcoin_vision_words::timing::span("mobile.total");
         let mut report = None;
         let (scan, _) = self.scan_inner(
             photo,
@@ -826,7 +826,7 @@ impl PhraseScanner {
         photo_up: PhotoUpSource,
         observer: Option<&dyn Observer>,
     ) -> Result<PhraseScan, VisionError> {
-        let _total = bitcoin_vision::timing::span("mobile.total");
+        let _total = bitcoin_vision_words::timing::span("mobile.total");
         let reader = self.reader.clone().with_photo_up(photo_up.into());
         progress::complete(observer, || {
             let (layout, scan, regions) = self.scan_page_using(
@@ -847,7 +847,14 @@ impl PhraseScanner {
         orientation: u8,
         observer: Option<&dyn Observer>,
         #[cfg(feature = "extent-experiment")] extent_report: Option<ExtentOutput<'_>>,
-    ) -> Result<(Layout, bitcoin_vision::phrase::PageScan, Vec<FinalRegion>), VisionError> {
+    ) -> Result<
+        (
+            Layout,
+            bitcoin_vision_words::phrase::PageScan,
+            Vec<FinalRegion>,
+        ),
+        VisionError,
+    > {
         self.scan_page_using(
             photo,
             orientation,
@@ -865,7 +872,14 @@ impl PhraseScanner {
         observer: Option<&dyn Observer>,
         reader: &Reader,
         #[cfg(feature = "extent-experiment")] extent_report: Option<ExtentOutput<'_>>,
-    ) -> Result<(Layout, bitcoin_vision::phrase::PageScan, Vec<FinalRegion>), VisionError> {
+    ) -> Result<
+        (
+            Layout,
+            bitcoin_vision_words::phrase::PageScan,
+            Vec<FinalRegion>,
+        ),
+        VisionError,
+    > {
         work(observer, Phase::Preparing, 0, None);
         let photo = photo::decode(&photo, orientation)?;
         emit(observer, || Event::Photo {
@@ -877,8 +891,8 @@ impl PhraseScanner {
         // a recovery phrase sheet is read by its layout; anything else by
         // the detector. A sheet that is found but cannot be read is an
         // error, never a page for the detector.
-        let _sheet = bitcoin_vision::timing::span("mobile.sheet_probe_read");
-        let sheet = bitcoin_vision::wordsheet::read_observed(
+        let _sheet = bitcoin_vision_words::timing::span("mobile.sheet_probe_read");
+        let sheet = bitcoin_vision_words::wordsheet::read_observed(
             &photo,
             reader,
             Some(&self.recogniser),
@@ -890,7 +904,7 @@ impl PhraseScanner {
         let (layout, scan, regions) = match sheet {
             Some((scan, regions)) => (Layout::WordSheet, scan, regions),
             None => {
-                let _detect = bitcoin_vision::timing::span("mobile.detect");
+                let _detect = bitcoin_vision_words::timing::span("mobile.detect");
                 let quads = self.detector.detect(&photo).map_err(scan_error)?;
                 drop(_detect);
                 let read_normal = || {
@@ -906,7 +920,7 @@ impl PhraseScanner {
                 #[cfg(feature = "extent-experiment")]
                 let (scan, regions) = if let Some(output) = extent_report {
                     if matches!(output, ExtentOutput::Baseline) {
-                        bitcoin_vision::phrase::read_words_baseline_observed(
+                        bitcoin_vision_words::phrase::read_words_baseline_observed(
                             &photo,
                             &quads,
                             reader,
@@ -917,12 +931,12 @@ impl PhraseScanner {
                         .map_err(scan_error)?
                     } else {
                         let audit = if matches!(output, ExtentOutput::Diagnostic(_)) {
-                            bitcoin_vision::extent::Audit::Components
+                            bitcoin_vision_words::extent::Audit::Components
                         } else {
-                            bitcoin_vision::extent::Audit::None
+                            bitcoin_vision_words::extent::Audit::None
                         };
                         let (experiment, regions) =
-                            bitcoin_vision::phrase::read_words_with_extent_e3_observed(
+                            bitcoin_vision_words::phrase::read_words_with_extent_e3_observed(
                                 &photo,
                                 &quads,
                                 reader,
@@ -935,7 +949,7 @@ impl PhraseScanner {
                             ExtentOutput::Diagnostic(output) => {
                                 let value = experiment.report.to_json();
                                 let _serialize =
-                                    bitcoin_vision::timing::span("phrase.extent.serialize");
+                                    bitcoin_vision_words::timing::span("phrase.extent.serialize");
                                 *output = value.to_string();
                             }
                             ExtentOutput::Lean(output) => *output = Some(experiment.report),
@@ -975,11 +989,11 @@ impl PhraseScanner {
 
 fn pack_scan(
     layout: Layout,
-    scan: &bitcoin_vision::phrase::PageScan,
+    scan: &bitcoin_vision_words::phrase::PageScan,
     observer: Option<&dyn Observer>,
 ) -> Result<PhraseScan, VisionError> {
     work(observer, Phase::Packing, 0, None);
-    let _pack = bitcoin_vision::timing::span("mobile.pack_result");
+    let _pack = bitcoin_vision_words::timing::span("mobile.pack_result");
     let mut words = Vec::with_capacity(scan.words.len());
     for w in &scan.words {
         words.push(WordReading::try_from(w)?);
@@ -990,8 +1004,8 @@ fn pack_scan(
     let rows = scan.by_rows();
     let numbered = scan.by_numbers();
     let numbering = match &scan.numbering {
-        bitcoin_vision::numbering::Numbering::None => Numbering::None,
-        bitcoin_vision::numbering::Numbering::Held {
+        bitcoin_vision_words::numbering::Numbering::None => Numbering::None,
+        bitcoin_vision_words::numbering::Numbering::Held {
             count,
             missing,
             out_of_place,
@@ -1003,12 +1017,15 @@ fn pack_scan(
             out_of_place: out_of_place.clone(),
             unresolved: unresolved.iter().map(|&i| i as u32).collect(),
         },
-        bitcoin_vision::numbering::Numbering::Inconsistent { detail } => Numbering::Inconsistent {
-            detail: detail.clone(),
-        },
+        bitcoin_vision_words::numbering::Numbering::Inconsistent { detail } => {
+            Numbering::Inconsistent {
+                detail: detail.clone(),
+            }
+        }
     };
     Ok(PhraseScan {
-        list_numbered: scan.list_mode() == bitcoin_vision::numbering::dotted::ListMode::Numbered,
+        list_numbered: scan.list_mode()
+            == bitcoin_vision_words::numbering::dotted::ListMode::Numbered,
         layout,
         width: scan.width,
         height: scan.height,
@@ -1034,7 +1051,7 @@ fn pack_scan(
 #[cfg(feature = "scan-profile")]
 #[uniffi::export]
 pub fn take_scan_profile() -> String {
-    bitcoin_vision::timing::take().to_string()
+    bitcoin_vision_words::timing::take().to_string()
 }
 
 fn parse_words(words: &[String]) -> Result<Vec<Word>, VisionError> {
@@ -1116,14 +1133,23 @@ mod phrase_tests {
 
     #[test]
     fn extent_provenance_and_original_read_material_survive_mobile_packing() {
-        use bitcoin_vision::phrase::{ExtentParent as Parent, WordBox};
+        use bitcoin_vision_words::phrase::{ExtentParent as Parent, WordBox};
         let mut word = WordBox {
-            quad: bitcoin_vision::detect::Quad([(10., 20.), (30., 20.), (30., 40.), (10., 40.)]),
-            crop: bitcoin_vision::image::GrayImage::from_raw(2, 3, vec![0, 10, 20, 30, 40, 255])
-                .unwrap(),
+            quad: bitcoin_vision_words::detect::Quad([
+                (10., 20.),
+                (30., 20.),
+                (30., 40.),
+                (10., 40.),
+            ]),
+            crop: bitcoin_vision_words::image::GrayImage::from_raw(
+                2,
+                3,
+                vec![0, 10, 20, 30, 40, 255],
+            )
+            .unwrap(),
             ranked: vec![(0, 0.7), (1, 0.3)],
             selection: Some(
-                bitcoin_vision::hybrid::select(
+                bitcoin_vision_words::hybrid::select(
                     Some("abamdon"),
                     None,
                     &[(0, 0.7), (1, 0.3)],
@@ -1135,7 +1161,7 @@ mod phrase_tests {
             column_rank: 1,
             row_rank: 3,
             turned: false,
-            raw: Some(bitcoin_vision::recogniser::LineRead {
+            raw: Some(bitcoin_vision_words::recogniser::LineRead {
                 text: "abamdon".into(),
                 confidence: 0.6,
             }),
@@ -1183,7 +1209,7 @@ mod phrase_tests {
             assert_eq!(packed.ranked[0].probability, 0.7);
             assert_eq!(packed.corners, vec![10., 20., 30., 20., 30., 40., 10., 40.]);
             assert_eq!(
-                bitcoin_vision::image::load_from_memory(&packed.crop_png)
+                bitcoin_vision_words::image::load_from_memory(&packed.crop_png)
                     .unwrap()
                     .to_luma8(),
                 word.crop
@@ -1193,7 +1219,7 @@ mod phrase_tests {
         word.expanded_from.clear();
         // An unreadable occupied cell remains one uncertain app entry at its
         // geometric position, carrying exactly the native box and read pixels.
-        word.evidence.cell = Some(bitcoin_vision::phrase::CellSupport {
+        word.evidence.cell = Some(bitcoin_vision_words::phrase::CellSupport {
             column: Some(0),
             row: Some(5),
             ordinal: Some(6),
@@ -1208,7 +1234,7 @@ mod phrase_tests {
         assert!(cell.joined_from.is_empty() && cell.expanded_from.is_empty());
         assert_eq!(cell.corners, vec![10., 20., 30., 20., 30., 40., 10., 40.]);
         assert_eq!(
-            bitcoin_vision::image::load_from_memory(&cell.crop_png)
+            bitcoin_vision_words::image::load_from_memory(&cell.crop_png)
                 .unwrap()
                 .to_luma8(),
             word.crop
@@ -1223,22 +1249,27 @@ mod phrase_tests {
         // Trimming is metadata, not another replacement/phrase entry. Each
         // verbatim read survives beside its own pixels through the ABI.
         word.raw.as_mut().unwrap().text = ". Hobby".into();
-        word.evidence.original = Some(bitcoin_vision::phrase::OriginalRead {
-            quad: bitcoin_vision::detect::Quad([(0., 20.), (30., 20.), (30., 40.), (0., 40.)]),
-            crop: bitcoin_vision::image::GrayImage::new(4, 3),
-            raw: bitcoin_vision::recogniser::LineRead {
+        word.evidence.original = Some(bitcoin_vision_words::phrase::OriginalRead {
+            quad: bitcoin_vision_words::detect::Quad([
+                (0., 20.),
+                (30., 20.),
+                (30., 40.),
+                (0., 40.),
+            ]),
+            crop: bitcoin_vision_words::image::GrayImage::new(4, 3),
+            raw: bitcoin_vision_words::recogniser::LineRead {
                 text: "9.Hobby".into(),
                 confidence: 0.8,
             },
         });
-        word.evidence.matching = Some(bitcoin_vision::phrase::MatchingRead {
+        word.evidence.matching = Some(bitcoin_vision_words::phrase::MatchingRead {
             text: "Hobby".into(),
             original: true,
             removed_prefix_bytes: 2,
         });
         word.evidence
             .labels
-            .push(bitcoin_vision::phrase::LabelRead {
+            .push(bitcoin_vision_words::phrase::LabelRead {
                 corners: word.quad.0,
                 literal: "9.Hobby".into(),
                 origin: "prefix".into(),
@@ -1253,13 +1284,13 @@ mod phrase_tests {
         assert_eq!(original.corners[0], 0.);
         assert_eq!(packed.corners[0], 10.);
         assert_eq!(
-            bitcoin_vision::image::load_from_memory(&original.crop_png)
+            bitcoin_vision_words::image::load_from_memory(&original.crop_png)
                 .unwrap()
                 .width(),
             4
         );
         assert_eq!(
-            bitcoin_vision::image::load_from_memory(&packed.crop_png)
+            bitcoin_vision_words::image::load_from_memory(&packed.crop_png)
                 .unwrap()
                 .width(),
             2
@@ -1277,7 +1308,7 @@ mod phrase_tests {
     fn app_profile_export_drains_only_numeric_thread_samples() {
         take_scan_profile();
         {
-            let _span = bitcoin_vision::timing::span("mobile.init");
+            let _span = bitcoin_vision_words::timing::span("mobile.init");
         }
         let report: serde_json::Value = serde_json::from_str(&take_scan_profile()).unwrap();
         assert_eq!(report["spans"][0]["name"], "mobile.init");

@@ -40,9 +40,11 @@ stage="$(staged)"
 (cd "$stage" && ci/graph.sh >/dev/null) || die "graph.sh fails on the tree as it is"
 rm -rf "$stage"
 
-expect_refusal "a word crate under the Penlock pipeline" "penlock-scan reaches bitcoin-vision" \
-    'printf "\n[target.%s.dependencies]\nbitcoin-vision = { path = \"..\", version = \"0.1.0\", default-features = false }\n" "'"'"'cfg(target_os = \"android\")'"'"'" >>penlock-scan/Cargo.toml'
-expect_refusal "a Penlock crate under the word pipeline" "bitcoin-vision reaches penlock" \
-    'sed -i.bak "s|^\[dependencies\]$|[dependencies]\npenlock = { path = \"penlock\", version = \"0.1.0\" }|" Cargo.toml'
+expect_refusal "a word crate under the Penlock pipeline" "penlock-scan reaches bitcoin-vision-words" \
+    'printf "\n[target.%s.dependencies]\nbitcoin-vision-words = { path = \"../words\", version = \"0.1.0\", default-features = false }\n" "'"'"'cfg(target_os = \"android\")'"'"'" >>penlock-scan/Cargo.toml'
+expect_refusal "a Penlock crate under the word pipeline" "bitcoin-vision-words reaches penlock" \
+    'sed -i.bak "s|^\[dependencies\]$|[dependencies]\npenlock = { path = \"../penlock\", version = \"0.1.0\" }|" words/Cargo.toml'
 expect_refusal "a phone that prints" "bitcoin-vision-mobile reaches svg2pdf" \
     'sed -i.bak "s|features = \[\"onnx\"\] }|features = [\"onnx\", \"print\"] }|" example-android-app/rust/bitcoin-vision-mobile/Cargo.toml'
+expect_refusal "a switch that turns a pipeline on" "bitcoin-vision reaches penlock-scan" \
+    'sed -i.bak "s|^onnx = \[\"bitcoin-vision-words?/onnx\", \"penlock-scan?/onnx\"\]|onnx = [\"bitcoin-vision-words?/onnx\", \"penlock-scan/onnx\"]|" Cargo.toml'

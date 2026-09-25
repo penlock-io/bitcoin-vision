@@ -66,9 +66,10 @@ reading plays faster than real time and the review after it plays at its own.
 
 ## Using the word-list library
 
-The root `bitcoin-vision` crate is the BIP39 word-list pipeline. The Penlock
-pipeline is not behind this API; it is the two crates named above, in the app's
-own workspace.
+`bitcoin-vision` is both pipelines, each a module and a feature, both on by
+default: `bitcoin_vision::words` is the word-list pipeline and
+`bitcoin_vision::penlock` the share pipeline. Either is also its own crate —
+`bitcoin-vision-words` and `penlock-scan` — for a dependency on one alone.
 
 This repository contains the required ONNX models. Use the `bundled-models`
 feature with a local path or version-pinned Git dependency; there is no runtime
@@ -78,7 +79,7 @@ set makes a small crates.io package a separate distribution decision, not
 something achieved by hiding the models at runtime.
 
 ```rust,no_run
-use bitcoin_vision::{Scanner, ScanOptions};
+use bitcoin_vision::words::{Scanner, ScanOptions};
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let scanner = Scanner::bundled()?; // load once, reuse for multiple images
@@ -107,7 +108,7 @@ One real phone capture, followed by the scanner's returned boxes:
 
 | Input photograph | Actual scanner output |
 | --- | --- |
-| ![Handwritten two-column test phrase](docs/images/handwritten-input.png) | ![Returned word polygons on the same photograph](docs/images/handwritten-boxes.png) |
+| ![Handwritten two-column test phrase](words/docs/images/handwritten-input.png) | ![Returned word polygons on the same photograph](words/docs/images/handwritten-boxes.png) |
 
 The ordered output is `shop exhaust erase demand switch powder now fault anchor
 enact rather cook`. This example's checksum passes. It is a demonstration, not
@@ -115,15 +116,15 @@ an accuracy benchmark. Green means native confirmation was accepted; amber means
 review is required. Neither color is a ground-truth correctness assertion.
 
 The phrase is a throwaway made for testing. The included full-resolution
-[example photo](examples/photos/handwritten.png) has no EXIF or device
+[example photo](words/examples/photos/handwritten.png) has no EXIF or device
 metadata; the README images are reduced for display only, and the scanner reads
 the full photograph.
 
 Reproduce the example from this repository:
 
 ```sh
-cargo run --release --features bundled-models --example scan -- \
-  examples/photos/handwritten.png new-output-directory
+cargo run --release -p bitcoin-vision-words --features bundled-models --example scan -- \
+  words/examples/photos/handwritten.png new-output-directory
 ```
 
 The example writes a metadata-free canonical `photo.png`, self-contained
@@ -175,15 +176,15 @@ and no wallet is created, restored or contacted by these crates.
 
 Project code and project-authored models are available under either
 [MIT](LICENSE) or [Apache-2.0](LICENSE-APACHE), at your choice.
-The [Paddle/RapidOCR models](models/README.md) remain **Apache-2.0-only**;
+The [Paddle/RapidOCR models](words/models/README.md) remain **Apache-2.0-only**;
 retain their license and attribution when redistributing them. Dependencies
 and the Android app's fonts retain their own licenses and notices.
 
 ## Build and test
 
 ```sh
-cargo test --locked --all-features
-cargo test --locked --features bundled-models --example scan
+cargo test --locked --workspace --all-features
+cargo test --locked -p bitcoin-vision-words --features bundled-models --example scan
 cargo check --locked --no-default-features
 cargo doc --locked --no-deps --features bundled-models
 ```

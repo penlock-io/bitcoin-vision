@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The layers as resolved, not as declared: core under forms, forms under both
-# pipelines, and neither pipeline under the other. A manifest can look right
+# pipelines, neither pipeline under the other, and the facade over both with
+# nothing under it reaching back. A manifest can look right
 # while a feature, a platform-specific table or a transitive dependency pulls a
 # sibling in, so each check reads the dependency tree cargo resolves with every
 # feature on, for every target.
@@ -37,19 +38,24 @@ refuse() {
 
 cd "$root"
 refuse "bitcoin-vision-core" "$(reaches --target all --all-features -p bitcoin-vision-core)" \
-    bitcoin-vision-forms bitcoin-vision penlock penlock-scan
+    bitcoin-vision-forms bitcoin-vision-words penlock penlock-scan bitcoin-vision
 refuse "bitcoin-vision-forms" "$(reaches --target all --all-features -p bitcoin-vision-forms)" \
-    bitcoin-vision penlock penlock-scan
-refuse "bitcoin-vision" "$(reaches --target all --all-features -p bitcoin-vision)" \
-    penlock penlock-scan
+    bitcoin-vision-words penlock penlock-scan bitcoin-vision
+refuse "bitcoin-vision-words" "$(reaches --target all --all-features -p bitcoin-vision-words)" \
+    penlock penlock-scan bitcoin-vision
 refuse "penlock-scan" "$(reaches --target all --all-features -p penlock-scan)" \
-    bitcoin-vision
+    bitcoin-vision-words bitcoin-vision
 refuse "penlock" "$(reaches --target all --all-features -p penlock)" \
-    bitcoin-vision bitcoin-vision-core bitcoin-vision-forms penlock-scan
+    bitcoin-vision-words bitcoin-vision-core bitcoin-vision-forms penlock-scan bitcoin-vision
+
+# The facade's shared switches forward to whichever pipelines are on and
+# turn neither on themselves.
+refuse "bitcoin-vision" "$(reaches --target all --no-default-features --features onnx,print -p bitcoin-vision)" \
+    bitcoin-vision-words penlock-scan
 
 phone="$(reaches --manifest-path example-android-app/rust/Cargo.toml \
     --target aarch64-linux-android -p bitcoin-vision-mobile)"
 refuse "bitcoin-vision-mobile" "$phone" svg2pdf pdf-writer
 
-[ "$fail" = 0 ] && echo "graph.sh: core, forms and two sibling pipelines, and a phone that does not print"
+[ "$fail" = 0 ] && echo "graph.sh: core, forms, two sibling pipelines under one facade, and a phone that does not print"
 exit "$fail"

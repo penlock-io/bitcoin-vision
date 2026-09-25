@@ -51,7 +51,7 @@ done
 # A packaged lock names this workspace's other crates as registry crates; the
 # patches point them at the packages just built instead, and may drop those
 # entries' registry source and checksum and nothing else.
-siblings="bitcoin-vision-core bitcoin-vision-forms penlock"
+siblings="bitcoin-vision-core bitcoin-vision-forms bitcoin-vision-words penlock penlock-scan"
 test_on_siblings() {
     (
         cd "$1"
@@ -68,7 +68,8 @@ test_on_siblings() {
     )
 }
 test_on_siblings bitcoin-vision-forms-0.1.0
-test_on_siblings bitcoin-vision-0.1.0
+test_on_siblings bitcoin-vision-words-0.1.0
 test_on_siblings penlock-0.1.0
 test_on_siblings penlock-scan-0.1.0
+test_on_siblings bitcoin-vision-0.1.0
 echo "package.sh: every crate packages, carries its licences, and passes its own tests"

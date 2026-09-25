@@ -298,22 +298,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitcoin-vision"
-version = "0.1.0"
-dependencies = [
- "bip39",
- "bitcoin-vision-core",
- "bitcoin-vision-forms",
- "bitcoin_hashes 0.14.101",
- "image",
- "imageproc",
- "rand 0.9.5",
- "serde",
- "serde_json",
- "tract-onnx",
-]
-
-[[package]]
 name = "bitcoin-vision-core"
 version = "0.1.0"
 dependencies = [
@@ -337,7 +321,7 @@ name = "bitcoin-vision-mobile"
 version = "0.1.0"
 dependencies = [
  "bdk_wallet",
- "bitcoin-vision",
+ "bitcoin-vision-words",
  "crc",
  "minicbor",
  "penlock",
@@ -348,6 +332,22 @@ dependencies = [
  "serde_json",
  "uniffi",
  "ur",
+]
+
+[[package]]
+name = "bitcoin-vision-words"
+version = "0.1.0"
+dependencies = [
+ "bip39",
+ "bitcoin-vision-core",
+ "bitcoin-vision-forms",
+ "bitcoin_hashes 0.14.101",
+ "image",
+ "imageproc",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "tract-onnx",
 ]
 
 [[package]]

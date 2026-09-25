@@ -2,48 +2,34 @@
 name = "bitcoin-vision"
 version = "0.1.0"
 edition = "2024"
-description = "Offline handwritten BIP39 photo recognition with word geometry and decision evidence"
+description = "Read handwritten bitcoin data from a photo, offline: BIP39 recovery phrases and Penlock share strips"
 repository = "https://github.com/penlock-io/llscan"
 license = "MIT OR Apache-2.0"
 publish = false
-include = ["/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE-APACHE", "/README.md", "/src/**/*.rs", "/tests/artifacts.rs", "/examples/scan.rs", "/examples/photos/handwritten.png", "/docs/images/*", "/docs/pipelines/*.md", "/models/*.onnx", "/models/*.calibration", "/models/*.txt", "/models/README.md", "/models/NOTICE", "/models/LICENSE-APACHE"]
+include = ["/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE-APACHE", "/README.md", "/src/**/*.rs", "/tests/readme.rs", "/docs/images/*", "/docs/pipelines/*.md"]
 
-# This package is independently buildable outside the research workspace.
 [workspace]
-members = ["core", "forms", "penlock", "penlock-scan"]
+members = ["core", "forms", "words", "penlock", "penlock-scan"]
 exclude = ["example-android-app/rust"]
 
 [dependencies]
-bitcoin-vision-core = { path = "core", version = "0.1.0" }
-bitcoin-vision-forms = { path = "forms", version = "0.1.0" }
-bip39 = "2.2"
-bitcoin_hashes = "0.14"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-imageproc = { version = "0.27", default-features = false }
-# Seeds the handwriting placement of a filled word sheet.
-rand = { version = "0.9", default-features = false, features = ["std_rng"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tract-onnx = { version = "0.23", optional = true }
-
-[dev-dependencies]
-base64 = "0.22"
-tempfile = "3"
-rand = { version = "0.9", features = ["std_rng"] }
+bitcoin-vision-words = { path = "words", version = "0.1.0", default-features = false, optional = true }
+penlock-scan = { path = "penlock-scan", version = "0.1.0", default-features = false, optional = true }
 
 [features]
-default = ["onnx"]
-onnx = ["dep:tract-onnx", "word-extent", "bitcoin-vision-core/onnx"]
-word-extent = []
-scan-profile = []
-extent-experiment = ["word-extent", "scan-profile"]
-bundled-models = ["onnx"]
-# The word sheet as a PDF for printing; reading never needs it.
-print = ["bitcoin-vision-forms/print"]
-
-[[example]]
-name = "scan"
-required-features = ["bundled-models"]
+default = ["words", "penlock", "onnx"]
+# The BIP39 word pipeline, as `bitcoin_vision::words`.
+words = ["dep:bitcoin-vision-words"]
+# The Penlock share pipeline, as `bitcoin_vision::penlock`.
+penlock = ["dep:penlock-scan"]
+# Model inference for whichever pipelines are on; it turns neither on.
+onnx = ["bitcoin-vision-words?/onnx", "penlock-scan?/onnx"]
+# PDF output for whichever pipelines' forms are on.
+print = ["bitcoin-vision-words?/print", "penlock-scan?/print"]
+bundled-models = ["words", "bitcoin-vision-words/bundled-models"]
+word-extent = ["words", "bitcoin-vision-words/word-extent"]
+scan-profile = ["words", "bitcoin-vision-words/scan-profile"]
+extent-experiment = ["words", "bitcoin-vision-words/extent-experiment"]
 
 [profile.dev]
 opt-level = 1

@@ -12,7 +12,7 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 bdk_wallet = { version = "3.1.0", features = ["keys-bip39"] }
-bitcoin-vision = { path = "../../..", default-features = false, features = ["onnx"] }
+bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx"] }
 penlock = { path = "../../../penlock", features = ["wallet"] }
 penlock-scan = { path = "../../../penlock-scan", default-features = false, features = ["onnx"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
@@ -27,9 +27,9 @@ ur = "0.4"
 [features]
 # The bindings generator CLI; only the app build needs it.
 bindgen = ["uniffi/cli"]
-scan-profile = ["bitcoin-vision/scan-profile"]
+scan-profile = ["bitcoin-vision-words/scan-profile"]
 # Historical baseline and diagnostic comparison only; normal app uses lean E3.
-extent-experiment = ["scan-profile", "bitcoin-vision/extent-experiment"]
+extent-experiment = ["scan-profile", "bitcoin-vision-words/extent-experiment"]
 
 [[bin]]
 name = "uniffi-bindgen"

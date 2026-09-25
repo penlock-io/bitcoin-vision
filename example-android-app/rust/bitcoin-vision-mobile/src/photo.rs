@@ -1,7 +1,7 @@
 //! One explicit orientation after decoding; never interpret EXIF a second time.
 
 use crate::VisionError;
-use bitcoin_vision::image::{ImageFormat, RgbImage, imageops};
+use bitcoin_vision_words::image::{ImageFormat, RgbImage, imageops};
 
 /// Caller provenance for the top of the canonical photo, not another transform.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
@@ -17,7 +17,7 @@ pub enum PhotoUpSource {
     Explicit,
 }
 
-impl From<PhotoUpSource> for bitcoin_vision::page_frame::PhotoUp {
+impl From<PhotoUpSource> for bitcoin_vision_words::page_frame::PhotoUp {
     fn from(value: PhotoUpSource) -> Self {
         match value {
             PhotoUpSource::Unknown => Self::Unknown,
@@ -29,14 +29,14 @@ impl From<PhotoUpSource> for bitcoin_vision::page_frame::PhotoUp {
 }
 
 pub(crate) fn decode(photo: &[u8], orientation: u8) -> Result<RgbImage, VisionError> {
-    let _decode = bitcoin_vision::timing::span("mobile.decode");
+    let _decode = bitcoin_vision_words::timing::span("mobile.decode");
     // One decoder for both pipelines, so a phone gets the same size and
     // pixel-count limits a caller of the library does. The app resolves EXIF
     // itself and hands the transform here, so the embedded value is never read
     // a second time.
-    bitcoin_vision::decode_image(photo, Some(orientation)).map_err(|e| VisionError::Photo {
+    bitcoin_vision_words::decode_image(photo, Some(orientation)).map_err(|e| VisionError::Photo {
         detail: match e {
-            bitcoin_vision::ScanError::Image(detail) => detail,
+            bitcoin_vision_words::ScanError::Image(detail) => detail,
             other => other.to_string(),
         },
     })
@@ -91,8 +91,8 @@ pub fn canonical_photo(photo: Vec<u8>, orientation: u8) -> Result<Vec<u8>, Visio
 
 #[cfg(test)]
 mod tests {
-    use bitcoin_vision::image;
     use super::*;
+    use bitcoin_vision_words::image;
 
     fn marker() -> RgbImage {
         RgbImage::from_fn(3, 2, |x, y| image::Rgb([(1 + y * 3 + x) as u8, 0, 0]))
@@ -100,8 +100,8 @@ mod tests {
 
     #[test]
     fn photo_up_bridge_preserves_identity_provenance_without_changing_pixels() {
-        use bitcoin_vision::detect::Quad;
-        use bitcoin_vision::page_frame::{PageAxis, PhotoUp, PolarityReason};
+        use bitcoin_vision_words::detect::Quad;
+        use bitcoin_vision_words::page_frame::{PageAxis, PhotoUp, PolarityReason};
         let mut bytes = std::io::Cursor::new(Vec::new());
         marker().write_to(&mut bytes, ImageFormat::Png).unwrap();
         for (input, expected) in [

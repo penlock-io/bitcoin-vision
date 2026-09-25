@@ -1,6 +1,6 @@
 //! Per-call UniFFI adapter for the plain scan observer.
 
-use bitcoin_vision::progress as core;
+use bitcoin_vision_words::progress as core;
 use std::sync::Mutex;
 // Outside a diagnostic build only the tests still count with an atomic.
 #[cfg(any(test, feature = "scan-profile"))]
@@ -370,8 +370,10 @@ impl ProgressCallbackProbe {
     /// Emit synthetic geometry, wait for release, then emit completion.
     /// Returns whether released before the timeout, not recognition success.
     pub fn run(&self, observer: Box<dyn ScanProgressObserver>) -> bool {
-        use bitcoin_vision::detect::Quad;
-        use bitcoin_vision::progress::{Event, FinalRegion, Observer, Phase, Region, RegionState};
+        use bitcoin_vision_words::detect::Quad;
+        use bitcoin_vision_words::progress::{
+            Event, FinalRegion, Observer, Phase, Region, RegionState,
+        };
         if self.used.swap(true, Ordering::Relaxed) {
             return false;
         }
@@ -424,7 +426,7 @@ impl ProgressCallbackProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision::progress::Observer;
+    use bitcoin_vision_words::progress::Observer;
     use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
     use std::time::Duration;
@@ -819,7 +821,7 @@ mod tests {
     fn revisions_keep_geometry_and_parent_ids_in_one_update() {
         let region = core::Region {
             id: 12,
-            quad: bitcoin_vision::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
+            quad: bitcoin_vision_words::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
             state: core::RegionState::Read,
         };
         let update = ScanProgressUpdate::from(core::Event::Replaced {

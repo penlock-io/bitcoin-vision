@@ -79,7 +79,7 @@ val copyModels = tasks.register<Copy>("copyModels") {
     from(scannerRoot.resolve("penlock-scan/models/cell-reference.onnx"))
     for (name in listOf("word-detector.onnx", "word-reference.onnx", "word-reference.calibration",
         "text-recogniser.onnx", "text-recogniser.dict.txt")) {
-        from(scannerRoot.resolve("models/$name"))
+        from(scannerRoot.resolve("words/models/$name"))
     }
     into(layout.buildDirectory.dir("generated/assets"))
 }
@@ -91,7 +91,7 @@ val copyFonts = tasks.register<Copy>("copyFonts") {
 val copyNotices = tasks.register<Copy>("copyNotices") {
     from(scannerRoot.resolve("LICENSE"))
     from(scannerRoot.resolve("LICENSE-APACHE"))
-    from(scannerRoot.resolve("models/NOTICE")) { rename { "PADDLE-NOTICE" } }
+    from(scannerRoot.resolve("words/models/NOTICE")) { rename { "PADDLE-NOTICE" } }
     from(scannerRoot.resolve("forms/fonts")) { include("OFL-*.txt") }
     into(layout.buildDirectory.dir("generated/assets/licenses"))
 }

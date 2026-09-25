@@ -1,7 +1,7 @@
 //! Explicit saved-stage transport. No image encoding, recognition or I/O here.
 use crate::{InitialOrder, Layout, PhotoUpSource, PhraseScan, VisionError};
-use bitcoin_vision::phrase::PageScan;
-use bitcoin_vision::progress::FinalRegion;
+use bitcoin_vision_words::phrase::PageScan;
+use bitcoin_vision_words::progress::FinalRegion;
 use serde_json::{Value, json};
 
 /// One named UTF-8 stage artifact, created only by the diagnostic scan method.
@@ -31,7 +31,7 @@ pub(crate) fn pack(
     orientation: u8,
     photo_up: PhotoUpSource,
 ) -> Result<Vec<DiagnosticFile>, VisionError> {
-    let boxes = bitcoin_vision::boxes::BoxScan::from_page(scan, regions)
+    let boxes = bitcoin_vision_words::boxes::BoxScan::from_page(scan, regions)
         .map_err(|detail| VisionError::Scan { detail })?;
     let file = |name: &str, rows: Vec<Value>| DiagnosticFile {
         name: name.into(),
@@ -43,7 +43,7 @@ pub(crate) fn pack(
         InitialOrder::Columns => &result.columns,
     };
     let sources = scan.sources.iter().map(|s| {
-        use bitcoin_vision::sources::Outcome;
+        use bitcoin_vision_words::sources::Outcome;
         let outcome = match &s.outcome {
             Outcome::Parts(parts)=>json!({"kind":"parts","parts":parts.iter().map(|p| json!({"part":p.part,"quad":p.quad.0,"word_index":p.word_index})).collect::<Vec<_>>()}),
             Outcome::Empty(reason)=>json!({"kind":"empty","reason":reason.as_str()}),
@@ -54,17 +54,17 @@ pub(crate) fn pack(
                 "scale":d.scale().map(|s| json!({"height":s.height,"supports":s.supports})),
                 "owner":d.owner().map(|o| json!({"source":o.source,"part":o.part,"word_index":o.word_index(&scan.sources)})),
                 "union_geometry":match d {
-                    bitcoin_vision::fragments::Decision::Tiny { ownership:bitcoin_vision::fragments::Ownership::Ending {union,footprint,..},.. } => Some(json!({"quad":union.0,"footprint":footprint.0})),
+                    bitcoin_vision_words::fragments::Decision::Tiny { ownership:bitcoin_vision_words::fragments::Ownership::Ending {union,footprint,..},.. } => Some(json!({"quad":union.0,"footprint":footprint.0})),
                     _=>None,
                 }})),
             "union":s.union.as_ref().map(|u| json!({"word_index":u.word_index,"selected":u.selected,"reason":u.reason}))})
     }).collect::<Vec<_>>();
     let mut numbering = match &scan.numbering {
-        bitcoin_vision::numbering::Numbering::None => json!({"state":"none"}),
-        bitcoin_vision::numbering::Numbering::Inconsistent { detail } => {
+        bitcoin_vision_words::numbering::Numbering::None => json!({"state":"none"}),
+        bitcoin_vision_words::numbering::Numbering::Inconsistent { detail } => {
             json!({"state":"inconsistent","detail":detail})
         }
-        bitcoin_vision::numbering::Numbering::Held {
+        bitcoin_vision_words::numbering::Numbering::Held {
             count,
             missing,
             out_of_place,
@@ -79,7 +79,7 @@ pub(crate) fn pack(
     Ok(vec![
         file("manifest.json",vec![json!({"schema":"penlock-phone-decisions-v1","page":PAGE,
             "coordinate_frame":"canonical_photo","orientation_applied":orientation,"layout":if result.layout==Layout::Page {"page"} else {"word_sheet"},
-            "photo_up_source":bitcoin_vision::page_frame::PhotoUp::from(photo_up).source(),
+            "photo_up_source":bitcoin_vision_words::page_frame::PhotoUp::from(photo_up).source(),
             "page_writing_direction":scan.page_direction.as_ref().and_then(|d| d.decisions.as_ref()).map(|d|d.to_json()),
             "package_version":env!("CARGO_PKG_VERSION"),"code_revision":option_env!("VISION_BUILD_REVISION"),
             "word_count":scan.words.len(),"scope":"native scan before user edits"})]),
@@ -106,16 +106,25 @@ pub(crate) fn pack(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision::phrase::{DecisionTrace, WordBox};
+    use bitcoin_vision_words::phrase::{DecisionTrace, WordBox};
 
     fn fixture() -> PageScan {
         let word = WordBox {
-            quad: bitcoin_vision::detect::Quad([(10., 20.), (50., 20.), (50., 40.), (10., 40.)]),
-            crop: bitcoin_vision::image::GrayImage::from_raw(2, 3, vec![0, 20, 40, 60, 80, 255])
-                .unwrap(),
+            quad: bitcoin_vision_words::detect::Quad([
+                (10., 20.),
+                (50., 20.),
+                (50., 40.),
+                (10., 40.),
+            ]),
+            crop: bitcoin_vision_words::image::GrayImage::from_raw(
+                2,
+                3,
+                vec![0, 20, 40, 60, 80, 255],
+            )
+            .unwrap(),
             ranked: vec![(0, 0.9), (1, 0.1)],
             selection: Some(
-                bitcoin_vision::hybrid::select(
+                bitcoin_vision_words::hybrid::select(
                     Some("abandon"),
                     None,
                     &[(0, 0.9), (1, 0.1)],
@@ -127,7 +136,7 @@ mod tests {
             column_rank: 0,
             row_rank: 0,
             turned: false,
-            raw: Some(bitcoin_vision::recogniser::LineRead {
+            raw: Some(bitcoin_vision_words::recogniser::LineRead {
                 text: "abandon".into(),
                 confidence: 0.6,
             }),
@@ -149,7 +158,7 @@ mod tests {
             width: 100,
             height: 100,
             words: vec![word, excluded],
-            numbering: bitcoin_vision::numbering::Numbering::None,
+            numbering: bitcoin_vision_words::numbering::Numbering::None,
             join_trials: vec![],
             sources: vec![],
         }
@@ -253,7 +262,7 @@ mod tests {
             "camera"
         );
         assert_eq!(
-            bitcoin_vision::image::load_from_memory(&traced.words[0].crop_png)
+            bitcoin_vision_words::image::load_from_memory(&traced.words[0].crop_png)
                 .unwrap()
                 .to_luma8(),
             scan.words[0].crop
@@ -301,10 +310,10 @@ mod tests {
         scan.words.clear();
         scan.sources.clear();
         scan.page_direction = Some(
-            bitcoin_vision::page_frame::PageAxis::from_detections(&[])
+            bitcoin_vision_words::page_frame::PageAxis::from_detections(&[])
                 .resolve(
-                    &bitcoin_vision::image::RgbImage::new(0, 0),
-                    bitcoin_vision::page_frame::PhotoUp::Unknown,
+                    &bitcoin_vision_words::image::RgbImage::new(0, 0),
+                    bitcoin_vision_words::page_frame::PhotoUp::Unknown,
                     None,
                     0.15,
                     true,
