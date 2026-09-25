@@ -1232,13 +1232,77 @@ fn no_inference_starts_on_any_reading_thread_once_the_scan_is_cancelled() {
 }
 
 impl crate::progress::Provisional for String {
-    fn reading(&self) -> Option<crate::progress::Reading> {
+    fn provisional(&self) -> Option<(Quad, crate::progress::Reading)> {
         None
     }
 }
 
 impl crate::progress::Provisional for usize {
-    fn reading(&self) -> Option<crate::progress::Reading> {
+    fn provisional(&self) -> Option<(Quad, crate::progress::Reading)> {
         None
+    }
+}
+
+/// A read that preparation narrowed: it reports the region it actually read.
+struct Narrowed(Quad);
+
+impl crate::progress::Provisional for Narrowed {
+    fn provisional(&self) -> Option<(Quad, crate::progress::Reading)> {
+        Some((
+            self.0.clone(),
+            crate::progress::Reading::from_parts(&[(7, 0.9)], None, false, None),
+        ))
+    }
+}
+
+#[test]
+fn a_read_is_announced_at_the_region_it_was_read_from_not_the_one_shown() {
+    struct Recorder(Mutex<Vec<Event>>);
+    impl Observer for Recorder {
+        fn on_event(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+    let narrowed = |quad: &Quad| {
+        let mut q = quad.clone();
+        for corner in &mut q.0 {
+            corner.0 -= 7.;
+        }
+        q
+    };
+    for workers in [1, 2] {
+        let mut sources = interleaved();
+        let input = Input::new(&mut sources, 0.15);
+        let n = input.quads.len();
+        let recorder = Recorder(Mutex::new(Vec::new()));
+        let stage = Stage::new(Some(&recorder), n);
+        input
+            .prepare_reserved_with(
+                Traversal::Grouped { workers },
+                &mut reserved(&input),
+                &stage,
+                Clone::clone,
+                |quad, _, _| Ok(Narrowed(narrowed(quad))),
+            )
+            .unwrap();
+        let events = recorder.0.into_inner().unwrap();
+        let mut shown = std::collections::HashMap::new();
+        let mut reads = 0;
+        for event in &events {
+            let Event::Region(region) = event else { continue };
+            match region.state {
+                crate::progress::RegionState::Reading => {
+                    shown.insert(region.id, region.quad.clone());
+                }
+                crate::progress::RegionState::Read => {
+                    reads += 1;
+                    let before = &shown[&region.id];
+                    assert_eq!(region.quad, narrowed(before), "region {}", region.id);
+                    assert_eq!(region.reading.as_ref().unwrap().candidates, vec![(7, 0.9)]);
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(reads, n);
     }
 }

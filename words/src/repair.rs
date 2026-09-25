@@ -450,7 +450,7 @@ impl<T: crate::progress::Provisional> Pass<T> {
     ) {
         match result {
             Ok(value) => {
-                progress.read(index, shown, || value.reading());
+                progress.read(index, shown, &value);
                 self.out[index] = Some(value);
                 self.delivered += 1;
                 progress.read_done(self.delivered);

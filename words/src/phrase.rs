@@ -641,12 +641,15 @@ impl Reader {
 /// recogniser's read, and where its leading run of ink ends with what
 /// that run reads as.
 impl crate::progress::Provisional for Prepared {
-    fn reading(&self) -> Option<crate::progress::Reading> {
-        Some(crate::progress::Reading::from_parts(
-            &self.ranked,
-            self.read.as_ref(),
-            self.turned,
-            self.decisions.as_ref(),
+    fn provisional(&self) -> Option<(Quad, crate::progress::Reading)> {
+        Some((
+            self.quad.clone(),
+            crate::progress::Reading::from_parts(
+                &self.ranked,
+                self.read.as_ref(),
+                self.turned,
+                self.decisions.as_ref(),
+            ),
         ))
     }
 }

@@ -95,13 +95,16 @@ impl Reading {
     }
 }
 
-/// What a pass that reads regions can say about one read it finished.
+/// What a pass that reads regions can say about one read it finished: the
+/// region it actually read, which preparation may have narrowed from the one
+/// shown while reading, and what it read there. One value owns both, so the
+/// record never pairs a reading with a region it was not read from.
 pub(crate) trait Provisional {
-    fn reading(&self) -> Option<Reading>;
+    fn provisional(&self) -> Option<(Quad, Reading)>;
 }
 
 impl Provisional for () {
-    fn reading(&self) -> Option<Reading> {
+    fn provisional(&self) -> Option<(Quad, Reading)> {
         None
     }
 }
@@ -269,19 +272,25 @@ impl<'a> Stage<'a> {
         });
     }
 
-    /// A region shown at `quad` has been read.
-    pub(crate) fn read(
-        &self,
-        index: usize,
-        quad: &Quad,
-        reading: impl FnOnce() -> Option<Reading>,
-    ) {
-        self.announce(index, quad, RegionState::Read, reading);
+    /// A region has been read: at the region the read reports and with its
+    /// reading, or, for a read that reports neither, where it was shown.
+    pub(crate) fn read(&self, index: usize, shown: &Quad, read: &impl Provisional) {
+        if self.observer.is_none() {
+            return;
+        }
+        match read.provisional() {
+            Some((quad, reading)) => {
+                self.announce(index, &quad, RegionState::Read, || Some(reading))
+            }
+            None => self.announce(index, shown, RegionState::Read, || None),
+        }
     }
 
     /// A read word, announced as read.
     pub(crate) fn read_word(&self, index: usize, word: &crate::phrase::WordBox) {
-        self.read(index, &word.quad, || Some(Reading::of(word)));
+        self.announce(index, &word.quad, RegionState::Read, || {
+            Some(Reading::of(word))
+        });
     }
 
     /// A read word, announced as read or, if it is set aside, excluded.
