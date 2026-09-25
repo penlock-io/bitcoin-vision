@@ -40,6 +40,7 @@ pub mod output;
 mod scanner;
 pub use image;
 pub use scanner::{
-    ModelBytes, ScanError, ScanOptions, ScanResult, Scanner, check_dimensions, decode_image,
+    Found, Layout, ModelBytes, Scan, ScanError, ScanOptions, ScanResult, Scanner, WordRegion,
+    Words, check_dimensions, decode_image,
 };
 pub use vocabulary::Word;

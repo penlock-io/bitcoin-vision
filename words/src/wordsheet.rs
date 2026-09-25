@@ -515,6 +515,9 @@ pub fn read_with_observed(
     progress.reading();
     let mut words = Vec::with_capacity(WordSheet::FIELDS);
     for (i, quad) in quads.into_iter().enumerate() {
+        if progress.cancelled() {
+            return Err(crate::progress::CANCELLED.into());
+        }
         progress.region(i, &quad, RegionState::Reading);
         let mut word = crop_reader(photo, &quad).map_err(|e| format!("field {}: {e}", i + 1))?;
         word.column_rank = i;

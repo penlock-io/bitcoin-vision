@@ -6,7 +6,7 @@ description = "Offline handwritten BIP39 photo recognition with word geometry an
 repository = "https://github.com/penlock-io/llscan"
 license = "MIT OR Apache-2.0"
 publish = false
-include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/tests/artifacts.rs", "/examples/scan.rs", "/examples/photos/handwritten.png", "/docs/images/*", "/models/*.onnx", "/models/*.calibration", "/models/*.txt", "/models/README.md", "/models/NOTICE", "/models/LICENSE-APACHE"]
+include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/tests/artifacts.rs", "/tests/scan.rs", "/examples/scan.rs", "/examples/photos/handwritten.png", "/docs/images/*", "/models/*.onnx", "/models/*.calibration", "/models/*.txt", "/models/README.md", "/models/NOTICE", "/models/LICENSE-APACHE"]
 
 [dependencies]
 bitcoin-vision-core = { path = "../core", version = "0.1.0" }

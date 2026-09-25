@@ -1186,3 +1186,52 @@ fn every_schedule_says_how_many_threads_it_used() {
         );
     }
 }
+
+/// Cancels once `after` reads have finished.
+struct CancelAfter {
+    after: usize,
+    read: AtomicUsize,
+}
+
+impl Observer for CancelAfter {
+    fn on_event(&self, event: Event) {
+        if matches!(event, Event::Region(r) if r.state == crate::progress::RegionState::Read) {
+            self.read.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.read.load(Ordering::SeqCst) >= self.after
+    }
+}
+
+#[test]
+fn no_read_starts_once_the_scan_is_cancelled() {
+    for workers in [1, 8] {
+        let mut sources = interleaved();
+        let input = Input::new(&mut sources, 0.15);
+        let n = input.quads.len();
+        let observer = CancelAfter {
+            after: 2,
+            read: AtomicUsize::new(0),
+        };
+        let stage = Stage::new(Some(&observer), n);
+        let started = AtomicUsize::new(0);
+        let result = input.prepare_reserved_with(
+            Traversal::Grouped { workers },
+            &mut reserved(&input),
+            &stage,
+            Clone::clone,
+            |_, _, _| {
+                started.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert_eq!(result, Err(crate::progress::CANCELLED.to_string()));
+        let started = started.load(Ordering::SeqCst);
+        assert!(
+            started < 2 + workers && started < n,
+            "{started} of {n} reads started on {workers} workers after a cancel at 2"
+        );
+    }
+}
