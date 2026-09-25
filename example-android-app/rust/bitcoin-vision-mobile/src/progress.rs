@@ -281,6 +281,71 @@ impl core::Observer for CallbackObserver {
     }
 }
 
+/// Hands a scan's record to `observer`, delta by delta in order, until the
+/// scan ends. The ending is not forwarded: the caller announces it once it
+/// has packed the result the ending is about.
+pub(crate) fn forward(
+    state: &bitcoin_vision_words::scan::ScanState<bitcoin_vision_words::Words>,
+    observer: &dyn core::Observer,
+) {
+    use bitcoin_vision_words::scan::{Cursor, Delta};
+    let region = |id, r: bitcoin_vision_words::WordRegion| core::Region {
+        id,
+        quad: r.quad,
+        state: r.state,
+        reading: r.reading,
+    };
+    let mut cursor = Cursor::default();
+    // Decoding is the app's and is part of preparing, so the app announced
+    // Preparing before it began; the scan's own opening announcement of the
+    // same phase would say it twice.
+    let mut opening = true;
+    loop {
+        let (deltas, at) = state.wait(cursor, std::time::Duration::from_millis(50));
+        cursor = at;
+        for delta in deltas {
+            let first = std::mem::replace(&mut opening, false);
+            if first
+                && matches!(
+                    delta,
+                    Delta::Work {
+                        phase: core::Phase::Preparing,
+                        completed: 0,
+                        total: None
+                    }
+                )
+            {
+                continue;
+            }
+            observer.on_event(match delta {
+                Delta::Photo { width, height } => core::Event::Photo { width, height },
+                Delta::Work {
+                    phase,
+                    completed,
+                    total,
+                } => core::Event::Work {
+                    phase,
+                    completed,
+                    total,
+                },
+                Delta::Region { id, region: r } => core::Event::Region(region(id, r)),
+                Delta::Replaced {
+                    id,
+                    region: r,
+                    parents,
+                } => core::Event::Replaced {
+                    region: region(id, r),
+                    parents,
+                },
+                Delta::Removed { id } => core::Event::Removed { id },
+                Delta::Finished(_) | Delta::Failed(_) | Delta::Cancelled | Delta::Abandoned => {
+                    return;
+                }
+            });
+        }
+    }
+}
+
 impl From<core::Region> for ScanRegion {
     fn from(region: core::Region) -> Self {
         Self {
@@ -391,6 +456,7 @@ impl ProgressCallbackProbe {
             id: 0,
             quad: Quad([(10., 20.), (110., 20.), (110., 50.), (10., 50.)]),
             state: RegionState::Reading,
+            reading: None,
         };
         observer.on_event(Event::Region(region.clone()));
         let (released, _) = self

@@ -38,6 +38,23 @@ pub struct ScanOptions {
     pub orientation: Option<u8>,
     /// Whether to look for a recovery phrase sheet before reading a page.
     pub layout: Layout,
+    /// Which word-extent arm a page is read with. Research comparisons only;
+    /// every other build reads with the arm the app ships.
+    #[cfg(feature = "extent-experiment")]
+    pub extent: Extent,
+}
+
+/// A word-extent arm to read a page with, for comparing them.
+#[cfg(feature = "extent-experiment")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Extent {
+    /// The arm the app ships.
+    #[default]
+    Shipped,
+    /// The historical baseline, before extents.
+    Baseline,
+    /// E3, returning its report, with component evidence when audited.
+    E3(crate::extent::Audit),
 }
 
 /// A model-loading, image-decoding or scan-processing error.
@@ -66,6 +83,9 @@ impl std::error::Error for ScanError {}
 pub struct ScanResult {
     /// Whether the photo was read as a page or as a sheet.
     pub found: Found,
+    /// The E3 arm's report, when the scan was asked to read with it.
+    #[cfg(feature = "extent-experiment")]
+    pub extent: Option<Arc<crate::extent::Report>>,
     /// Observations, exact recognition crops, candidates and label evidence.
     pub page: PageScan,
     /// Final output regions, mapped to the page observations by the scanner.
@@ -91,6 +111,11 @@ impl Scanner {
             dictionary: include_str!("../models/text-recogniser.dict.txt"),
         })
     }
+    /// The text recogniser this scanner reads with.
+    pub fn recogniser(&self) -> &Recogniser {
+        &self.recogniser
+    }
+
     /// A scanner over models the caller already built, for a caller that
     /// loads them its own way: the phone prepares its recogniser for its
     /// hardware, the research harness picks its own files.
@@ -276,6 +301,8 @@ impl Scan<'_> {
                         found: Found::Sheet,
                         page,
                         regions,
+                        #[cfg(feature = "extent-experiment")]
+                        extent: None,
                     });
                 }
                 (None, Layout::Sheet) => {
@@ -292,12 +319,49 @@ impl Scan<'_> {
             .detect(photo)
             .map_err(ScanError::Processing)?;
         stop()?;
+        let recogniser = &scanner.recogniser;
+        let margin = crate::phrase::CROP_MARGIN;
+        #[cfg(feature = "extent-experiment")]
+        let (page, regions, extent) = match self.options.extent {
+            Extent::Shipped => {
+                let (page, regions) = crate::phrase::read_words_observed(
+                    photo,
+                    &quads,
+                    &reader,
+                    Some(recogniser),
+                    margin,
+                    observer,
+                )
+                .map_err(ScanError::Processing)?;
+                (page, regions, None)
+            }
+            Extent::Baseline => {
+                let (page, regions) = crate::phrase::read_words_baseline_observed(
+                    photo,
+                    &quads,
+                    &reader,
+                    Some(recogniser),
+                    margin,
+                    observer,
+                )
+                .map_err(ScanError::Processing)?;
+                (page, regions, None)
+            }
+            Extent::E3(audit) => {
+                let (experiment, regions) = crate::phrase::read_words_with_extent_e3_observed(
+                    photo, &quads, &reader, recogniser, audit, observer,
+                )
+                .map_err(ScanError::Processing)?;
+                (experiment.scan, regions, Some(Arc::new(experiment.report)))
+            }
+        };
+        #[cfg(not(feature = "extent-experiment"))]
         let (page, regions) = crate::phrase::read_words_observed(
             photo,
             &quads,
             &reader,
-            Some(&scanner.recogniser),
-            crate::phrase::CROP_MARGIN,
+            Some(recogniser),
+            margin,
             observer,
         )
         .map_err(ScanError::Processing)?;
@@ -306,6 +370,8 @@ impl Scan<'_> {
             found: Found::Page,
             page,
             regions,
+            #[cfg(feature = "extent-experiment")]
+            extent,
         })
     }
 }

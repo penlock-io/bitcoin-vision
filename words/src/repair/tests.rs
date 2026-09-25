@@ -1289,7 +1289,9 @@ fn a_read_is_announced_at_the_region_it_was_read_from_not_the_one_shown() {
         let mut shown = std::collections::HashMap::new();
         let mut reads = 0;
         for event in &events {
-            let Event::Region(region) = event else { continue };
+            let Event::Region(region) = event else {
+                continue;
+            };
             match region.state {
                 crate::progress::RegionState::Reading => {
                     shown.insert(region.id, region.quad.clone());

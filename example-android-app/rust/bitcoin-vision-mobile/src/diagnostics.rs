@@ -170,13 +170,13 @@ mod tests {
         scan.words[1].stray = false;
         scan.words[0].row_rank = 1;
         scan.words[1].row_rank = 0;
-        let result = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let result = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         assert!(result.order_requires_review);
         assert_eq!(result.order_basis, "equal_dimensions_unverified_layout");
         assert_eq!(result.initial_order, crate::InitialOrder::Columns);
         scan.words[0].row_rank = 0;
         scan.words[1].row_rank = 1;
-        let result = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let result = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         assert!(!result.order_requires_review);
         assert_eq!(result.order_basis, "same_retained_traversal");
     }
@@ -194,10 +194,10 @@ mod tests {
                 word_index: 0,
             },
         ];
-        let normal = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let normal = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         let plain = pack(&scan, &normal, &regions, 6, PhotoUpSource::Camera).unwrap();
         scan.words[0].evidence.decisions = Some(DecisionTrace::default());
-        let traced = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let traced = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         assert_eq!(
             normal, traced,
             "diagnostics must not alter review bytes/order/selection"
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn saved_transport_refuses_incomplete_or_conflicting_region_links() {
         let scan = fixture();
-        let packed = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let packed = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         for regions in [
             vec![],
             vec![FinalRegion {
@@ -320,7 +320,7 @@ mod tests {
                 )
                 .unwrap(),
         );
-        let result = crate::pack_scan(Layout::Page, &scan, None).unwrap();
+        let result = crate::pack_scan(bitcoin_vision_words::Found::Page, &scan).unwrap();
         let files = pack(&scan, &result, &[], 1, PhotoUpSource::Unknown).unwrap();
         let manifest: Value = serde_json::from_str(
             &files

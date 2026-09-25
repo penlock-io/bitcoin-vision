@@ -20,10 +20,12 @@ use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::template::{Bip86, DescriptorTemplate};
 use bitcoin_vision_words::detect::Detector;
-use bitcoin_vision_words::phrase::{CROP_MARGIN, Reader, read_words_observed};
-use bitcoin_vision_words::progress::{Event, FinalRegion, Observer, Phase, emit, work};
+use bitcoin_vision_words::phrase::Reader;
+use bitcoin_vision_words::progress::Observer;
 use bitcoin_vision_words::recogniser::{Preparation, Recogniser};
+use bitcoin_vision_words::scan::Outcome as ScanOutcome;
 use bitcoin_vision_words::words::Verdict;
+use bitcoin_vision_words::{ScanError, ScanOptions, ScanResult};
 use penlock::soft::combine;
 use penlock::soft::search::{Bip39Checksum, Filter, Floor, Outcome, search, slots};
 use penlock::word::symbols_to_string;
@@ -238,9 +240,7 @@ pub fn recover(a: Arc<StripReading>, b: Arc<StripReading>) -> Result<Vec<String>
 /// bytes.
 #[derive(uniffi::Object)]
 pub struct PhraseScanner {
-    detector: Detector,
-    reader: Reader,
-    recogniser: Recogniser,
+    scanner: bitcoin_vision_words::Scanner,
 }
 
 /// One list word with the probability the model gives it.
@@ -550,7 +550,8 @@ impl PhraseScanner {
     /// Deliberately outside the UniFFI-exported implementation.
     #[cfg(feature = "scan-profile")]
     pub fn profile_blank_ocr(&self, width: u32) -> Result<(), VisionError> {
-        self.recogniser
+        self.scanner
+            .recogniser()
             .profile_blank_width(width)
             .map_err(|detail| VisionError::Model { detail })
     }
@@ -565,14 +566,12 @@ impl PhraseScanner {
     ) -> Result<Self, VisionError> {
         let model_error = |detail| VisionError::Model { detail };
         Ok(PhraseScanner {
-            detector: Detector::from_bytes(&detector).map_err(model_error)?,
-            reader: Reader::from_bytes(&model, &calibration).map_err(model_error)?,
-            recogniser: Recogniser::from_bytes_with_preparation(
-                &recogniser,
-                &dictionary,
-                preparation,
-            )
-            .map_err(model_error)?,
+            scanner: bitcoin_vision_words::Scanner::from_models(
+                Detector::from_bytes(&detector).map_err(model_error)?,
+                Reader::from_bytes(&model, &calibration).map_err(model_error)?,
+                Recogniser::from_bytes_with_preparation(&recogniser, &dictionary, preparation)
+                    .map_err(model_error)?,
+            ),
         })
     }
 
@@ -700,24 +699,17 @@ impl PhraseScanner {
         observer: Box<dyn ScanProgressObserver>,
     ) -> Result<DiagnosedScan, VisionError> {
         let observer = progress::CallbackObserver::new(observer);
-        let reader = self
-            .reader
-            .clone()
-            .with_decision_trace(true)
-            .with_photo_up(photo_up.into());
+        let options = ScanOptions {
+            diagnostics: true,
+            photo_up: photo_up.into(),
+            ..ScanOptions::default()
+        };
         let mut files = Vec::new();
         let scan = progress::complete(Some(&observer), || {
-            let (layout, scan, regions) = self.scan_page_using(
-                photo,
-                orientation,
-                Some(&observer),
-                &reader,
-                #[cfg(feature = "extent-experiment")]
-                None,
-            )?;
-            let result = pack_scan(layout, &scan, Some(&observer))?;
-            files = diagnostics::pack(&scan, &result, &regions, orientation, photo_up)?;
-            Ok((result, regions))
+            let read = self.scan_page(photo, orientation, options, Some(&observer))?;
+            let result = pack_scan(read.found, &read.page)?;
+            files = diagnostics::pack(&read.page, &result, &read.regions, orientation, photo_up)?;
+            Ok((result, read.regions))
         })?;
         Ok(DiagnosedScan { scan, files })
     }
@@ -741,13 +733,6 @@ impl PhraseScanner {
     }
 }
 
-#[cfg(feature = "extent-experiment")]
-enum ExtentOutput<'a> {
-    Baseline,
-    Diagnostic(&'a mut String),
-    Lean(&'a mut Option<bitcoin_vision_words::extent::Report>),
-}
-
 impl PhraseScanner {
     fn scan_boxes_observed(
         &self,
@@ -760,15 +745,9 @@ impl PhraseScanner {
         observer.complete(|| {
             // Some(observer) keeps the stage-owned ID mapping even without a
             // foreign callback. It neither selects boxes nor retains readings.
-            let (_, scan, regions) = self.scan_page(
-                photo,
-                orientation,
-                Some(&observer),
-                #[cfg(feature = "extent-experiment")]
-                None,
-            )?;
-            work(Some(&observer), Phase::Packing, 0, None);
-            bitcoin_vision_words::boxes::BoxScan::from_page(&scan, &regions)
+            let read =
+                self.scan_page(photo, orientation, ScanOptions::default(), Some(&observer))?;
+            bitcoin_vision_words::boxes::BoxScan::from_page(&read.page, &read.regions)
                 .map_err(|detail| VisionError::Scan { detail })
         })
     }
@@ -782,18 +761,21 @@ impl PhraseScanner {
         use_extent: bool,
     ) -> Result<(PhraseScan, String), VisionError> {
         let _total = bitcoin_vision_words::timing::span("mobile.total");
-        let mut report = String::new();
-        let (scan, _) = self.scan_inner(
+        let read = self.scan_extent(
             photo,
-            1,
-            None,
-            Some(if use_extent {
-                ExtentOutput::Diagnostic(&mut report)
-            } else {
-                ExtentOutput::Baseline
-            }),
+            use_extent,
+            bitcoin_vision_words::extent::Audit::Components,
         )?;
-        Ok((scan, report))
+        let report = read
+            .extent
+            .as_ref()
+            .map(|r| {
+                let value = r.to_json();
+                let _serialize = bitcoin_vision_words::timing::span("phrase.extent.serialize");
+                value.to_string()
+            })
+            .unwrap_or_default();
+        Ok((pack_scan(read.found, &read.page)?, report))
     }
 
     /// Same lean E3 arm as normal scans, retaining its compact report for the
@@ -805,17 +787,12 @@ impl PhraseScanner {
         use_extent: bool,
     ) -> Result<(PhraseScan, Option<bitcoin_vision_words::extent::Report>), VisionError> {
         let _total = bitcoin_vision_words::timing::span("mobile.total");
-        let mut report = None;
-        let (scan, _) = self.scan_inner(
-            photo,
-            1,
-            None,
-            Some(if use_extent {
-                ExtentOutput::Lean(&mut report)
-            } else {
-                ExtentOutput::Baseline
-            }),
-        )?;
+        let read =
+            self.scan_extent(photo, use_extent, bitcoin_vision_words::extent::Audit::None)?;
+        let scan = pack_scan(read.found, &read.page)?;
+        let report = read
+            .extent
+            .map(|r| std::sync::Arc::try_unwrap(r).expect("the result is the report's only owner"));
         Ok((scan, report))
     }
 
@@ -827,172 +804,85 @@ impl PhraseScanner {
         observer: Option<&dyn Observer>,
     ) -> Result<PhraseScan, VisionError> {
         let _total = bitcoin_vision_words::timing::span("mobile.total");
-        let reader = self.reader.clone().with_photo_up(photo_up.into());
+        let options = ScanOptions {
+            photo_up: photo_up.into(),
+            ..ScanOptions::default()
+        };
         progress::complete(observer, || {
-            let (layout, scan, regions) = self.scan_page_using(
-                photo,
-                orientation,
-                observer,
-                &reader,
-                #[cfg(feature = "extent-experiment")]
-                None,
-            )?;
-            Ok((pack_scan(layout, &scan, observer)?, regions))
+            let read = self.scan_page(photo, orientation, options, observer)?;
+            Ok((pack_scan(read.found, &read.page)?, read.regions))
         })
     }
 
+    /// Reads a phrase: decodes the photo in the app's frame, then drives the
+    /// word pipeline's scan to its end, forwarding its record to `observer`
+    /// as it grows. Everything between is the scan's, including whether the
+    /// photo is a sheet.
     fn scan_page(
         &self,
         photo: Vec<u8>,
         orientation: u8,
+        options: ScanOptions,
         observer: Option<&dyn Observer>,
-        #[cfg(feature = "extent-experiment")] extent_report: Option<ExtentOutput<'_>>,
-    ) -> Result<
-        (
-            Layout,
-            bitcoin_vision_words::phrase::PageScan,
-            Vec<FinalRegion>,
-        ),
-        VisionError,
-    > {
-        self.scan_page_using(
-            photo,
-            orientation,
+    ) -> Result<ScanResult, VisionError> {
+        bitcoin_vision_words::progress::work(
             observer,
-            &self.reader,
-            #[cfg(feature = "extent-experiment")]
-            extent_report,
-        )
-    }
-
-    fn scan_page_using(
-        &self,
-        photo: Vec<u8>,
-        orientation: u8,
-        observer: Option<&dyn Observer>,
-        reader: &Reader,
-        #[cfg(feature = "extent-experiment")] extent_report: Option<ExtentOutput<'_>>,
-    ) -> Result<
-        (
-            Layout,
-            bitcoin_vision_words::phrase::PageScan,
-            Vec<FinalRegion>,
-        ),
-        VisionError,
-    > {
-        work(observer, Phase::Preparing, 0, None);
+            bitcoin_vision_words::progress::Phase::Preparing,
+            0,
+            None,
+        );
         let photo = photo::decode(&photo, orientation)?;
-        emit(observer, || Event::Photo {
-            width: photo.width(),
-            height: photo.height(),
-        });
-        work(observer, Phase::Finding, 0, None);
-        let scan_error = |detail| VisionError::Scan { detail };
-        // a recovery phrase sheet is read by its layout; anything else by
-        // the detector. A sheet that is found but cannot be read is an
-        // error, never a page for the detector.
-        let _sheet = bitcoin_vision_words::timing::span("mobile.sheet_probe_read");
-        let sheet = bitcoin_vision_words::wordsheet::read_observed(
-            &photo,
-            reader,
-            Some(&self.recogniser),
-            CROP_MARGIN,
-            observer,
-        )
-        .map_err(scan_error)?;
-        drop(_sheet);
-        let (layout, scan, regions) = match sheet {
-            Some((scan, regions)) => (Layout::WordSheet, scan, regions),
-            None => {
-                let _detect = bitcoin_vision_words::timing::span("mobile.detect");
-                let quads = self.detector.detect(&photo).map_err(scan_error)?;
-                drop(_detect);
-                let read_normal = || {
-                    read_words_observed(
-                        &photo,
-                        &quads,
-                        reader,
-                        Some(&self.recogniser),
-                        CROP_MARGIN,
-                        observer,
-                    )
-                };
-                #[cfg(feature = "extent-experiment")]
-                let (scan, regions) = if let Some(output) = extent_report {
-                    if matches!(output, ExtentOutput::Baseline) {
-                        bitcoin_vision_words::phrase::read_words_baseline_observed(
-                            &photo,
-                            &quads,
-                            reader,
-                            Some(&self.recogniser),
-                            CROP_MARGIN,
-                            observer,
-                        )
-                        .map_err(scan_error)?
-                    } else {
-                        let audit = if matches!(output, ExtentOutput::Diagnostic(_)) {
-                            bitcoin_vision_words::extent::Audit::Components
-                        } else {
-                            bitcoin_vision_words::extent::Audit::None
-                        };
-                        let (experiment, regions) =
-                            bitcoin_vision_words::phrase::read_words_with_extent_e3_observed(
-                                &photo,
-                                &quads,
-                                reader,
-                                &self.recogniser,
-                                audit,
-                                observer,
-                            )
-                            .map_err(scan_error)?;
-                        match output {
-                            ExtentOutput::Diagnostic(output) => {
-                                let value = experiment.report.to_json();
-                                let _serialize =
-                                    bitcoin_vision_words::timing::span("phrase.extent.serialize");
-                                *output = value.to_string();
-                            }
-                            ExtentOutput::Lean(output) => *output = Some(experiment.report),
-                            ExtentOutput::Baseline => unreachable!("baseline handled before E3"),
-                        }
-                        (experiment.scan, regions)
-                    }
-                } else {
-                    read_normal().map_err(scan_error)?
-                };
-                #[cfg(not(feature = "extent-experiment"))]
-                let (scan, regions) = read_normal().map_err(scan_error)?;
-                (Layout::Page, scan, regions)
+        let (scan, state) = self.scanner.start(photo, options);
+        let outcome = std::thread::scope(|threads| {
+            if let Some(observer) = observer {
+                let state = state.clone();
+                threads.spawn(move || progress::forward(&state, observer));
             }
-        };
-        Ok((layout, scan, regions))
+            scan.run()
+        });
+        // The record holds the result too; dropping the last view of it
+        // leaves the result with one owner, so it is moved rather than copied.
+        drop(state);
+        match outcome {
+            ScanOutcome::Finished(result) => {
+                Ok(Arc::try_unwrap(result).unwrap_or_else(|shared| (*shared).clone()))
+            }
+            ScanOutcome::Failed(ScanError::Image(detail)) => Err(VisionError::Photo { detail }),
+            ScanOutcome::Failed(ScanError::Model(detail)) => Err(VisionError::Model { detail }),
+            ScanOutcome::Failed(ScanError::Processing(detail)) => Err(VisionError::Scan { detail }),
+            ScanOutcome::Cancelled | ScanOutcome::Abandoned => Err(VisionError::Scan {
+                detail: "the scan stopped before it finished".into(),
+            }),
+        }
     }
 
     #[cfg(feature = "extent-experiment")]
-    fn scan_inner(
+    fn scan_extent(
         &self,
         photo: Vec<u8>,
-        orientation: u8,
-        observer: Option<&dyn Observer>,
-        #[cfg(feature = "extent-experiment")] extent_report: Option<ExtentOutput<'_>>,
-    ) -> Result<(PhraseScan, Vec<FinalRegion>), VisionError> {
-        let (layout, scan, regions) = self.scan_page(
-            photo,
-            orientation,
-            observer,
-            #[cfg(feature = "extent-experiment")]
-            extent_report,
-        )?;
-        Ok((pack_scan(layout, &scan, observer)?, regions))
+        use_extent: bool,
+        audit: bitcoin_vision_words::extent::Audit,
+    ) -> Result<ScanResult, VisionError> {
+        let options = ScanOptions {
+            extent: if use_extent {
+                bitcoin_vision_words::Extent::E3(audit)
+            } else {
+                bitcoin_vision_words::Extent::Baseline
+            },
+            ..ScanOptions::default()
+        };
+        self.scan_page(photo, 1, options, None)
     }
 }
 
 fn pack_scan(
-    layout: Layout,
+    found: bitcoin_vision_words::Found,
     scan: &bitcoin_vision_words::phrase::PageScan,
-    observer: Option<&dyn Observer>,
 ) -> Result<PhraseScan, VisionError> {
-    work(observer, Phase::Packing, 0, None);
+    let layout = match found {
+        bitcoin_vision_words::Found::Page => Layout::Page,
+        bitcoin_vision_words::Found::Sheet => Layout::WordSheet,
+    };
     let _pack = bitcoin_vision_words::timing::span("mobile.pack_result");
     let mut words = Vec::with_capacity(scan.words.len());
     for w in &scan.words {

@@ -13,6 +13,8 @@ pub mod extent;
 pub mod fragments;
 /// Re-exported from `bitcoin-vision-core`, which both pipelines depend on.
 pub use bitcoin_vision_core::homography;
+/// How a caller follows a scan: the record [`Scanner::start`] hands back.
+pub use bitcoin_vision_core::scan;
 pub mod hybrid;
 pub mod inference_limit;
 pub mod joins;
@@ -39,6 +41,8 @@ pub mod wordsheet;
 pub mod output;
 mod scanner;
 pub use image;
+#[cfg(feature = "extent-experiment")]
+pub use scanner::Extent;
 pub use scanner::{
     Found, Layout, ModelBytes, Scan, ScanError, ScanOptions, ScanResult, Scanner, WordRegion,
     Words, check_dimensions, decode_image,
