@@ -410,13 +410,25 @@ impl Cancellation {
     /// returned guard drops.
     pub fn enter(&self) -> Entered {
         let previous = CURRENT.with(|c| c.replace(Some(self.clone())));
-        Entered { previous }
+        Entered {
+            previous,
+            _thread: std::marker::PhantomData,
+        }
     }
 }
 
-/// Restores the thread's previous cancellation when dropped.
+/// Restores the thread's previous cancellation when dropped. It belongs to
+/// the thread that entered, so it cannot be sent to another:
+///
+/// ```compile_fail
+/// fn send<T: Send>() {}
+/// send::<bitcoin_vision_core::scan::Entered>();
+/// ```
 pub struct Entered {
     previous: Option<Cancellation>,
+    // Dropped on another thread, it would restore that thread's cancellation
+    // to this one's and leave this one's in place.
+    _thread: std::marker::PhantomData<*const ()>,
 }
 
 impl Drop for Entered {
