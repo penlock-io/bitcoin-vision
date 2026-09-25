@@ -71,8 +71,8 @@ reports the correction rather than applying it silently.
 (`locate`, `cells`, `model`, `scan`), and `example-android-app/rust/penlock`
 owns the arithmetic (`split`, `recover`, `verify`, and the wheel the paper
 version is). Both are plain Rust crates. `penlock-scan` also renders
-worksheets and strips (`sheet`, `wordsheet`, `template`, `pdf`), which is how
-the test fixtures are made.
+worksheets and strips (`sheet`, `template`) on `bitcoin-vision-forms`, which is
+how the test fixtures are made.
 
 Its entry point is shaped like the word-list pipeline's, because the two answer
 the same kind of question:

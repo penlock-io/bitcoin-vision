@@ -11,14 +11,6 @@
 //! frame's top-left corner; the frame sits centred on A4 or Letter.
 //! Nothing secret is ever printed.
 
-use image::{GrayImage, RgbImage};
-use penlock::Word;
-use rand::{Rng, SeedableRng};
-
-use crate::detect::{Quad, clockwise};
-use crate::numbering::Numbering;
-use crate::phrase::{PageScan, Reader, WordBox, read_crop};
-use crate::recogniser::Recogniser;
 use bitcoin_vision_forms::frame::{
     Frame, Geometry, RECTIFIED_PX_PER_MM, locate_frames, paper_white, read_field,
 };
@@ -26,8 +18,14 @@ use bitcoin_vision_forms::marks::{Field, decode_with, encode_with};
 use bitcoin_vision_forms::render::{
     Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, rasterize, svg_document, text,
 };
+use image::{GrayImage, RgbImage};
+use rand::{Rng, SeedableRng};
 
-use crate::template::WORDS;
+use crate::Word;
+use crate::detect::{Quad, clockwise};
+use crate::numbering::Numbering;
+use crate::phrase::{PageScan, Reader, WordBox, read_crop};
+use crate::recogniser::Recogniser;
 
 /// The sheet's version, printed in its identity marks.
 pub const VERSION: u8 = 1;
@@ -98,7 +96,7 @@ impl WordSheet {
     /// sheet is photographed from further away.
     pub const SLOT: f64 = 2.4;
     /// Fields down the page.
-    pub const FIELDS: usize = WORDS;
+    pub const FIELDS: usize = 12;
     /// Top of the first field's interior.
     pub const FIELDS_TOP: f64 = 40.0;
     /// Pitch between fields.

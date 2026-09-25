@@ -11,7 +11,6 @@ pub mod scanner;
 pub mod sheet;
 pub mod template;
 pub mod title;
-pub mod wordsheet;
 
 #[cfg(feature = "word-extent")]
 pub use bitcoin_vision::extent;

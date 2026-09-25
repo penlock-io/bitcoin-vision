@@ -15,10 +15,13 @@ exclude = ["example-android-app/rust"]
 
 [dependencies]
 bitcoin-vision-core = { path = "core", version = "0.1.0" }
+bitcoin-vision-forms = { path = "forms", version = "0.1.0" }
 bip39 = "2.2"
 bitcoin_hashes = "0.14"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 imageproc = { version = "0.27", default-features = false }
+# Seeds the handwriting placement of a filled word sheet.
+rand = { version = "0.9", default-features = false, features = ["std_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tract-onnx = { version = "0.23", optional = true }
@@ -35,6 +38,8 @@ word-extent = []
 scan-profile = []
 extent-experiment = ["word-extent", "scan-profile"]
 bundled-models = ["onnx"]
+# The word sheet as a PDF for printing; reading never needs it.
+print = ["bitcoin-vision-forms/print"]
 
 [[example]]
 name = "scan"

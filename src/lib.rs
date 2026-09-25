@@ -34,6 +34,7 @@ pub mod split;
 pub mod timing;
 pub mod vocabulary;
 pub mod words;
+pub mod wordsheet;
 
 pub mod output;
 mod scanner;

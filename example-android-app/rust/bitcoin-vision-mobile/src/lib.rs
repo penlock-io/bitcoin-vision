@@ -878,7 +878,7 @@ impl PhraseScanner {
         // the detector. A sheet that is found but cannot be read is an
         // error, never a page for the detector.
         let _sheet = bitcoin_vision::timing::span("mobile.sheet_probe_read");
-        let sheet = penlock_scan::wordsheet::read_observed(
+        let sheet = bitcoin_vision::wordsheet::read_observed(
             &photo,
             reader,
             Some(&self.recogniser),

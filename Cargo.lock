@@ -131,6 +131,7 @@ dependencies = [
  "base64",
  "bip39",
  "bitcoin-vision-core",
+ "bitcoin-vision-forms",
  "bitcoin_hashes",
  "image",
  "imageproc",
