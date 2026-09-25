@@ -1,11 +1,11 @@
-//! Sides of the worksheet as pages of one PDF, for printing at actual size.
+//! A form's pages as one PDF, for printing at actual size.
 
 use std::collections::HashMap;
 
 use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref};
 use svg2pdf::usvg;
 
-use crate::template::RenderError;
+use crate::render::RenderError;
 
 const POINTS_PER_MM: f64 = 72.0 / 25.4;
 

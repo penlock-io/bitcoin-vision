@@ -16,20 +16,27 @@ use penlock::Word;
 use rand::{Rng, SeedableRng};
 
 use crate::detect::{Quad, clockwise};
-use crate::locate::{
-    Geometry, Located, RECTIFIED_PX_PER_MM, locate_all_with, paper_white, read_field,
-};
-use crate::marks::{Field, WORD_SHEET_ID, decode_with, encode_with};
 use crate::numbering::Numbering;
 use crate::phrase::{PageScan, Reader, WordBox, read_crop};
 use crate::recogniser::Recogniser;
-use crate::template::{
-    Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, WORDS, rasterize, svg_document,
-    text,
+use bitcoin_vision_forms::frame::{
+    Frame, Geometry, RECTIFIED_PX_PER_MM, locate_frames, paper_white, read_field,
 };
+use bitcoin_vision_forms::marks::{Field, decode_with, encode_with};
+use bitcoin_vision_forms::render::{
+    Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, rasterize, svg_document, text,
+};
+
+use crate::template::WORDS;
 
 /// The sheet's version, printed in its identity marks.
 pub const VERSION: u8 = 1;
+
+/// The id byte the sheet prints in its mark field's top row: another
+/// id than the strips', so a strip reader sees a word sheet as foreign
+/// and a word-sheet reader sees a strip as foreign, each refusing the
+/// other by the same rule that refuses any other project.
+pub const WORD_SHEET_ID: u8 = b'W';
 
 /// The page frame every mark and field is placed in, millimetres.
 pub const FRAME: (f64, f64) = (190.0, 260.0);
@@ -103,6 +110,17 @@ impl WordSheet {
     /// The printed frame sits this far outside the interior, and the
     /// number this far left of the frame.
     pub const MARGIN: f64 = 1.0;
+
+    /// Where the sheet's fiducials, orientation mark and mark field are,
+    /// for finding it in a photo.
+    pub fn geometry(&self) -> Geometry {
+        Geometry {
+            bounds: self.bounds(),
+            fiducials: self.fiducials(),
+            mark: self.mark(),
+            mark_slots: self.mark_slots(),
+        }
+    }
 
     /// The whole frame.
     pub fn bounds(&self) -> Rect {
@@ -363,8 +381,9 @@ pub fn sheet_svg(paper: Paper, fill: Option<&WordFill>) -> String {
 }
 
 /// The blank sheet as a one-page PDF.
+#[cfg(feature = "print")]
 pub fn sheet_pdf(paper: Paper) -> Result<Vec<u8>, RenderError> {
-    crate::pdf::document(&[&sheet_svg(paper, None)], paper.size())
+    bitcoin_vision_forms::pdf::document(&[&sheet_svg(paper, None)], paper.size())
 }
 
 /// The sheet rendered at `dpi`, blank or filled.
@@ -430,9 +449,9 @@ fn ink_bounds(rectified: &GrayImage, interior: &Rect, px_per_mm: f64) -> Option<
 /// field decoding to the sheet's id and version. A strip, an ordinary
 /// page or any other marks give `None`. The sheet comes back with its
 /// face-on view for the fields to be cut from.
-pub fn identify(gray: &GrayImage) -> Option<(Located, GrayImage)> {
-    let geometry = Geometry::word_sheet();
-    let located = match locate_all_with(gray, geometry) {
+pub fn identify(gray: &GrayImage) -> Option<(Frame, GrayImage)> {
+    let geometry = WordSheet.geometry();
+    let located = match locate_frames(gray, geometry) {
         Ok(mut all) if all.len() == 1 => all.remove(0),
         _ => return None,
     };
@@ -442,7 +461,7 @@ pub fn identify(gray: &GrayImage) -> Option<(Located, GrayImage)> {
         return None;
     }
     match decode_with(WORD_SHEET_ID, field) {
-        Field::Penlock { number } if number == VERSION => Some((located, rectified)),
+        Field::Own { number } if number == VERSION => Some((located, rectified)),
         _ => None,
     }
 }

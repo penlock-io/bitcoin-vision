@@ -13,7 +13,9 @@
 use image::{GrayImage, Luma};
 
 use crate::homography::{Correspondence, Homography};
-use crate::locate::{Anchors, Blob, Integral, LocateError, Located, label_blobs, trace};
+use bitcoin_vision_forms::frame::{Blob, Frame, Integral, label_blobs};
+
+use crate::locate::{Anchors, LocateError, Located, trace};
 use crate::sheet::{Layout, Strip};
 
 /// The photo is averaged down by these before boxes are looked for, so a
@@ -213,14 +215,13 @@ pub(crate) fn locate_bare(photo: &GrayImage) -> Result<Located, LocateError> {
         "bare: lines {counts:?}, turned {turned}, {} correspondences, mean residual {residual:.2} px",
         pairs.len()
     ));
-    let located = Located::new(
-        fit,
-        Anchors::ChecksumBoxes,
-        Layout::Upstream,
-        crate::locate::Geometry::strip(),
-    )
-    .ok_or(LocateError::NoChecksumBoxes { rows: rows.len() })?;
-    Ok(located)
+    let frame = Frame::new(fit, Strip.geometry())
+        .ok_or(LocateError::NoChecksumBoxes { rows: rows.len() })?;
+    Ok(Located {
+        frame,
+        anchors: Anchors::ChecksumBoxes,
+        layout: Layout::Upstream,
+    })
 }
 
 /// A row's two shaded boxes, which touch and so are one blob: a solid

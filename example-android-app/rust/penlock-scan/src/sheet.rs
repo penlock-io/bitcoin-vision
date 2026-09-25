@@ -23,10 +23,13 @@ use penlock::word::{WORD_LEN, Word, symbols_to_string};
 use penlock::{Share, ShareIndex, Symbol};
 use rand::{Rng, RngCore, SeedableRng};
 
-use crate::template::{
-    CELL_FONT_SIZE, CHECKSUM_FILL, Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT,
-    UPSTREAM_CHECKSUM_FILL, WORDS, flatten, rasterize, svg_document, text,
+use bitcoin_vision_forms::Geometry;
+use bitcoin_vision_forms::render::{
+    Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, flatten, rasterize,
+    svg_document, text,
 };
+
+use crate::template::{CELL_FONT_SIZE, CHECKSUM_FILL, UPSTREAM_CHECKSUM_FILL, WORDS};
 
 /// A4 portrait, millimetres.
 pub const PAGE: (f64, f64) = (210.0, 297.0);
@@ -208,6 +211,17 @@ impl Strip {
     pub const BOXES_LEFT: f64 = 6.7;
     /// Side of the identity-code squares.
     pub const CODE_SQUARE: f64 = 3.0;
+
+    /// Where the strip's fiducials, orientation mark and mark field are,
+    /// for finding it in a photo.
+    pub fn geometry(&self) -> Geometry {
+        Geometry {
+            bounds: self.bounds(),
+            fiducials: self.fiducials(),
+            mark: self.mark(),
+            mark_slots: self.mark_slots(),
+        }
+    }
 
     /// The whole strip.
     pub fn bounds(&self) -> Rect {
@@ -881,8 +895,9 @@ pub fn cut_strip_with(front: &RgbImage, dpi: f64, slot: usize, cut: Cut) -> RgbI
 
 /// The blank worksheet as a two-page PDF, front then back, A4 at actual
 /// size.
+#[cfg(feature = "print")]
 pub fn sheet_pdf() -> Result<Vec<u8>, RenderError> {
-    crate::pdf::document(&[&front_svg(None)?, &back_svg()?], PAGE)
+    bitcoin_vision_forms::pdf::document(&[&front_svg(None)?, &back_svg()?], PAGE)
 }
 
 /// Renders the front at `dpi`, blank or filled.

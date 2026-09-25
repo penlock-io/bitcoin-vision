@@ -15,9 +15,11 @@ use image::{GrayImage, Luma};
 use penlock::ShareIndex;
 
 use crate::cells::crop_cell;
-use crate::locate::{Identity, RECTIFIED_PX_PER_MM, label_blobs, paper_white, trace};
+use bitcoin_vision_forms::frame::{Blob, RECTIFIED_PX_PER_MM, label_blobs, paper_white};
+use bitcoin_vision_forms::render::{INK, LABEL_FONT, Rect, rasterize, svg_document, text};
+
+use crate::locate::{Identity, trace};
 use crate::model::{correlation, ink_vector};
-use crate::template::{INK, LABEL_FONT, Rect, rasterize, svg_document, text};
 
 /// Where the title is on upstream's strip: between the top and the first
 /// row.
@@ -119,11 +121,7 @@ pub fn read_title(rectified: &GrayImage, px_per_mm: f64) -> Identity {
 
 /// The title's ink blobs in the window above the rows and the pixel
 /// rectangle they span, if there is a title's worth of them.
-fn title_ink(
-    rectified: &GrayImage,
-    px_per_mm: f64,
-    paper: f64,
-) -> Option<(Vec<crate::locate::Blob>, [u32; 4])> {
+fn title_ink(rectified: &GrayImage, px_per_mm: f64, paper: f64) -> Option<(Vec<Blob>, [u32; 4])> {
     let (x0, y0) = (
         (TITLE_WINDOW.x * px_per_mm) as u32,
         (TITLE_WINDOW.y * px_per_mm) as u32,
@@ -243,7 +241,7 @@ fn titles() -> &'static [Title] {
 }
 
 /// The ink span of a rendered title, the whole image being its window.
-fn title_ink_anywhere(gray: &GrayImage, px_per_mm: f64) -> (Vec<crate::locate::Blob>, [u32; 4]) {
+fn title_ink_anywhere(gray: &GrayImage, px_per_mm: f64) -> (Vec<Blob>, [u32; 4]) {
     let mut mask = GrayImage::new(gray.width(), gray.height());
     for (x, y, p) in gray.enumerate_pixels() {
         if f64::from(p.0[0]) < 255.0 * TITLE_INK {

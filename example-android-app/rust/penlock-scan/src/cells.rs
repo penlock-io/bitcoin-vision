@@ -9,7 +9,7 @@
 use image::{GrayImage, Luma, imageops};
 
 use crate::sheet::{Layout, Strip};
-use crate::template::Rect;
+use bitcoin_vision_forms::Rect;
 
 /// Side of a normalised cell image, in pixels, matching the classifier input.
 pub const CELL_SIZE: u32 = 128;

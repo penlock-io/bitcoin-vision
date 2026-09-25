@@ -94,7 +94,11 @@ impl Scanner {
     }
 
     /// Reads the one strip in a photograph already in canonical orientation.
-    pub fn scan_rgb(&self, image: &RgbImage, options: ScanOptions) -> Result<ScanResult, ScanError> {
+    pub fn scan_rgb(
+        &self,
+        image: &RgbImage,
+        options: ScanOptions,
+    ) -> Result<ScanResult, ScanError> {
         admit(image)?;
         let share = crate::scan::scan(image, self.model.as_ref())?;
         Ok(ScanResult {
@@ -226,7 +230,7 @@ fn observation(share: &ScannedShare, diagnostics: bool) -> Observation {
             Identity::Unknown => "unknown",
         },
         share: share.identity.share().map(ShareIndex::number),
-        quad: share.located.fiducials,
+        quad: share.located.frame.fiducials,
         confidence: share.confidence(),
         text: share
             .cells
@@ -251,7 +255,14 @@ fn observation(share: &ScannedShare, diagnostics: bool) -> Observation {
             .enumerate()
             .map(|(word, row)| {
                 (0..WORD_LEN)
-                    .map(|position| cell(&row[position], position, unread(word, position), diagnostics))
+                    .map(|position| {
+                        cell(
+                            &row[position],
+                            position,
+                            unread(word, position),
+                            diagnostics,
+                        )
+                    })
                     .collect()
             })
             .collect(),

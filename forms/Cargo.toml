@@ -1,0 +1,22 @@
+[package]
+name = "bitcoin-vision-forms"
+version = "0.1.0"
+edition = "2024"
+description = "Reading and drawing printed forms: fiducial frames, mark fields, SVG templates and their rasteriser"
+repository = "https://github.com/penlock-io/llscan"
+license = "MIT OR Apache-2.0"
+publish = false
+include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/fonts/*.ttf", "/fonts/OFL-*.txt"]
+
+[dependencies]
+bitcoin-vision-core = { path = "../core", version = "0.1.0" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+imageproc = { version = "0.27", default-features = false }
+resvg = "0.45"
+svg2pdf = { version = "0.13", default-features = false, optional = true }
+pdf-writer = { version = "0.12", optional = true }
+
+[features]
+default = []
+# Writing a form out as a PDF for printing; reading never needs it.
+print = ["dep:svg2pdf", "dep:pdf-writer"]

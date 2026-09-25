@@ -48,14 +48,20 @@ done
 
 (cd bitcoin-vision-core-0.1.0 && cargo test --offline --locked --all-features)
 
-# The word crate's packaged lock names its core as a registry crate; the patch
-# points it at the core package just built instead, and may drop that entry's
-# registry source and checksum and nothing else.
-cd bitcoin-vision-0.1.0
-cp Cargo.lock Cargo.lock.packaged
-cargo test --offline --all-features \
-    --config "patch.crates-io.bitcoin-vision-core.path='../bitcoin-vision-core-0.1.0'"
-awk '/^name = /{core = ($0 == "name = \"bitcoin-vision-core\"")}
-     !(core && /^(source|checksum) = /)' Cargo.lock.packaged >Cargo.lock.expected
-diff Cargo.lock.expected Cargo.lock || die "the patch moved more of the lock than the core's entry"
+# A packaged lock names the core as a registry crate; the patch points it at
+# the core package just built instead, and may drop that entry's registry
+# source and checksum and nothing else.
+test_on_core() {
+    (
+        cd "$1"
+        cp Cargo.lock Cargo.lock.packaged
+        cargo test --offline --all-features \
+            --config "patch.crates-io.bitcoin-vision-core.path='../bitcoin-vision-core-0.1.0'"
+        awk '/^name = /{core = ($0 == "name = \"bitcoin-vision-core\"")}
+             !(core && /^(source|checksum) = /)' Cargo.lock.packaged >Cargo.lock.expected
+        diff Cargo.lock.expected Cargo.lock || die "$1: the patch moved more of the lock than the core's entry"
+    )
+}
+test_on_core bitcoin-vision-forms-0.1.0
+test_on_core bitcoin-vision-0.1.0
 echo "package.sh: every crate packages, carries its licences, and passes its own tests"

@@ -6,7 +6,6 @@ pub mod cells;
 pub mod locate;
 pub mod marks;
 pub mod model;
-pub mod pdf;
 pub mod scan;
 pub mod scanner;
 pub mod sheet;
@@ -20,6 +19,7 @@ pub use bitcoin_vision::{
     boxes, detect, dot_grid, fragments, homography, hybrid, inference_limit, joins, layout,
     numbering, page_frame, phrase, progress, recogniser, region, sources, split, timing, words,
 };
+pub use bitcoin_vision_forms::{Font, Jitter, Rect};
 pub use cells::{CellImage, crop_cell, crop_cells};
 pub use homography::Homography;
 pub use image;
@@ -33,4 +33,4 @@ pub use scanner::{
     Cell, Document, ModelBytes, Observation, ScanError, ScanOptions, ScanResult, Scanner,
 };
 pub use sheet::{Aids, Cut, Fill, Layout, Sheet, Strip, StripKind};
-pub use template::{Font, Jitter, Rect, WORDS};
+pub use template::WORDS;

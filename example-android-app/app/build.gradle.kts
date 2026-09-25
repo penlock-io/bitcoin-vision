@@ -84,15 +84,15 @@ val copyModels = tasks.register<Copy>("copyModels") {
     into(layout.buildDirectory.dir("generated/assets"))
 }
 val copyFonts = tasks.register<Copy>("copyFonts") {
-    from(nativeRoot.resolve("penlock-scan/fonts/IBMPlexMono-Regular.ttf")) { rename { "ibm_plex_mono.ttf" } }
-    from(nativeRoot.resolve("penlock-scan/fonts/IBMPlexSans-Variable.ttf")) { rename { "ibm_plex_sans.ttf" } }
+    from(scannerRoot.resolve("forms/fonts/IBMPlexMono-Regular.ttf")) { rename { "ibm_plex_mono.ttf" } }
+    from(scannerRoot.resolve("forms/fonts/IBMPlexSans-Variable.ttf")) { rename { "ibm_plex_sans.ttf" } }
     into(layout.buildDirectory.dir("generated/fontres/font"))
 }
 val copyNotices = tasks.register<Copy>("copyNotices") {
     from(scannerRoot.resolve("LICENSE"))
     from(scannerRoot.resolve("LICENSE-APACHE"))
     from(scannerRoot.resolve("models/NOTICE")) { rename { "PADDLE-NOTICE" } }
-    from(nativeRoot.resolve("penlock-scan/fonts")) { include("OFL-*.txt") }
+    from(scannerRoot.resolve("forms/fonts")) { include("OFL-*.txt") }
     into(layout.buildDirectory.dir("generated/assets/licenses"))
 }
 tasks.named("preBuild") { dependsOn(uniffiBindings, copyModels, copyFonts, copyNotices) }

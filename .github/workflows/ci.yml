@@ -82,6 +82,9 @@ jobs:
       # that does not.
       - name: The Penlock pipeline on its own default features
         run: cargo +stable test --locked --manifest-path rust/Cargo.toml -p penlock-scan --tests
+      # The phone never enables printing, so nothing above builds the PDFs.
+      - name: The Penlock pipeline with printing
+        run: cargo +stable check --locked --manifest-path rust/Cargo.toml -p penlock-scan --features print
       - name: Unit tests, the APK, and the instrumentation sources
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
