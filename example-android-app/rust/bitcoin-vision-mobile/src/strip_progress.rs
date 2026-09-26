@@ -102,6 +102,13 @@ pub trait StripProgressObserver: Send + Sync {
 }
 
 fn project(delta: Delta<Strips>) -> StripProgressUpdate {
+    // Native fiducials are TL, TR, BL, BR. Phone outlines need winding order.
+    fn corners(quad: [(f64, f64); 4]) -> Vec<f64> {
+        [0usize, 1, 3, 2]
+            .into_iter()
+            .flat_map(|i| [quad[i].0, quad[i].1])
+            .collect()
+    }
     match delta {
         Delta::Photo { width, height } => StripProgressUpdate::Photo { width, height },
         Delta::Work {
@@ -115,7 +122,7 @@ fn project(delta: Delta<Strips>) -> StripProgressUpdate {
         },
         Delta::Region { id, region } => StripProgressUpdate::Region {
             id,
-            corners: region.quad.iter().flat_map(|(x, y)| [*x, *y]).collect(),
+            corners: corners(region.quad),
             read: region.reading.is_some(),
         },
         Delta::Replaced {
@@ -124,7 +131,7 @@ fn project(delta: Delta<Strips>) -> StripProgressUpdate {
             parents,
         } => StripProgressUpdate::Replaced {
             id,
-            corners: region.quad.iter().flat_map(|(x, y)| [*x, *y]).collect(),
+            corners: corners(region.quad),
             read: region.reading.is_some(),
             parents,
         },
@@ -191,7 +198,7 @@ mod tests {
             update,
             StripProgressUpdate::Region {
                 id: 7,
-                corners: vec![1., 2., 3., 4., 5., 6., 7., 8.],
+                corners: vec![1., 2., 3., 4., 7., 8., 5., 6.],
                 read: false,
             }
         );

@@ -9,6 +9,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,7 +19,10 @@ import uniffi.bitcoin_vision_mobile.VisionException
 import uniffi.bitcoin_vision_mobile.Scanner
 import uniffi.bitcoin_vision_mobile.StripIdentity
 import uniffi.bitcoin_vision_mobile.StripReading
+import uniffi.bitcoin_vision_mobile.StripProgressObserver
+import uniffi.bitcoin_vision_mobile.CombinedStripReview
 import uniffi.bitcoin_vision_mobile.recover
+import uniffi.bitcoin_vision_mobile.reviewCombinedStrips
 
 sealed interface Capture {
     data object Reading : Capture
@@ -40,6 +45,8 @@ sealed interface StripScan {
 /** What reads a photographed strip into its cells. */
 fun interface StripReader {
     fun read(photo: ResolvedPhoto): List<StripReading>
+    fun readWithProgress(photo: ResolvedPhoto, observer: StripProgressObserver): List<StripReading> = read(photo)
+    val requiresProgress: Boolean get() = false
 }
 
 /// The strip wizard: photograph two share strips and recover the
@@ -52,13 +59,54 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The reader every attempt goes through; a test puts a slower or a failing one here. */
     @VisibleForTesting
-    var reader: StripReader = StripReader { scanner.readOriented(it.source.copyBytes(), it.orientation.toUByte()) }
+    var reader: StripReader = object : StripReader {
+        override val requiresProgress = true
+        override fun read(photo: ResolvedPhoto): List<StripReading> =
+            scanner.readOriented(photo.source.copyBytes(), photo.orientation.toUByte())
+        override fun readWithProgress(photo: ResolvedPhoto, observer: StripProgressObserver): List<StripReading> =
+            scanner.readOrientedWithProgress(photo.source.copyBytes(), photo.orientation.toUByte(), observer)
+    }
 
     /** The photographs taken, one current at a time. */
     val attempts = Attempts<List<StripReading>>()
     @VisibleForTesting var preparer: PhotoPreparer = PhotoPreparer(::resolvePhoto)
     private val scanning = Mutex()
     private var reading: Job? = null
+    private var progressJob: Job? = null
+    private var handoff: StripProgressHandoff? = null
+    var progress by mutableStateOf<StripProgressState?>(null)
+        private set
+    var reviewedStrip by mutableStateOf<StripReading?>(null)
+        private set
+    var heldPhoto by mutableStateOf<ResolvedPhoto?>(null)
+        private set
+    var editError by mutableStateOf<String?>(null)
+        private set
+
+    private fun stopProgress() {
+        handoff?.detach(); handoff = null
+        progressJob?.cancel(); progressJob = null
+        progress = null
+    }
+    private fun startProgress(token: Int): StripProgressHandoff {
+        stopProgress()
+        val stream = StripProgressHandoff(token)
+        handoff = stream
+        progress = stream.snapshot()
+        progressJob = viewModelScope.launch {
+            while (isActive && handoff === stream && attempts.current?.token == token) {
+                val frame = stream.nextFrame() ?: break
+                if (progress !== frame) progress = frame
+                delay(PROGRESS_FRAME_MS)
+            }
+        }
+        return stream
+    }
+    fun progressPresented(token: Int, sequence: ULong) {
+        handoff?.takeIf { it.token == token }?.presented(sequence)
+    }
+
+    override fun onCleared() { stopProgress(); super.onCleared() }
 
     var scan by mutableStateOf<StripScan>(StripScan.Idle)
         private set
@@ -80,17 +128,24 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
         (strip.identity() as? StripIdentity.Share)?.index
 
     fun start() {
+        stopProgress()
         scan = StripScan.Scanning(null)
         attempts.cancel()
         reading?.cancel()
         combined = null
+        reviewedStrip = null
+        heldPhoto = null
+        editError = null
     }
 
     fun cancel() {
+        stopProgress()
         scan = StripScan.Idle
         attempts.cancel()
         reading?.cancel()
         combined = null
+        reviewedStrip = null
+        heldPhoto = null
     }
 
     /// Clears the wizard once its phrase has been taken.
@@ -98,7 +153,10 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A new attempt at the shutter, named for the photo the camera will deliver. */
     fun begin(): Int {
+        stopProgress()
         combined = null
+        reviewedStrip = null
+        editError = null
         return attempts.begin()
     }
 
@@ -113,6 +171,7 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
         if (!attempts.deliverPhoto(token, photo)) return
         photo ?: return
         reading?.cancel()
+        val stream = startProgress(token)
         reading = viewModelScope.launch {
             val strips = try {
                 val resolved = withContext(Dispatchers.Default) {
@@ -123,7 +182,7 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
                     if (attempts.current?.token != token) return@launch
                     withContext(Dispatchers.Default) {
                         if (photo.camera == null) logPhotoInput(photo)
-                        reader.read(resolved)
+                        reader.readWithProgress(resolved, stream)
                     }
                 }
             } catch (e: PhotoPreparationException) {
@@ -134,6 +193,16 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
                 val detail = e.message?.removePrefix("detail=")
                 attempts.fail(token, detail ?: "The photo could not be read.")
                 return@launch
+            } catch (e: IllegalArgumentException) {
+                attempts.fail(token, e.message ?: "The strip scan did not complete.")
+                return@launch
+            }
+            // A test reader may not implement progress; the native reader must.
+            try {
+                if (reader.requiresProgress || stream.hasEvents()) stream.awaitPlayback()
+            } catch (e: IllegalArgumentException) {
+                attempts.fail(token, e.message ?: "The strip scan did not complete.")
+                return@launch
             }
             attempts.finish(token, strips)
         }
@@ -143,9 +212,12 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun saveCanonicalPhoto(): String? = saveCanonicalPhotoForDiagnosis(getApplication(), attempts.resolvedPhoto)
 
     fun retake() {
+        stopProgress()
         attempts.cancel()
         reading?.cancel()
         combined = null
+        reviewedStrip = null
+        editError = null
     }
 
     /// The share the wizard can take from a capture: the first share
@@ -175,22 +247,65 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
     /// completed it and the phrase is recovered.
     fun use(strip: StripReading): Boolean {
         val scanning = scan as? StripScan.Scanning ?: return false
-        attempts.cancel()
-        reading?.cancel()
+        val effective = reviewedStrip ?: strip
         val held = scanning.held
         if (held == null) {
-            scan = StripScan.Scanning(strip)
+            heldPhoto = attempts.resolvedPhoto
+            attempts.cancel()
+            stopProgress()
+            reading?.cancel()
+            scan = StripScan.Scanning(effective)
+            reviewedStrip = null
             return false
         }
         val first = shareNumber(held) ?: return false
-        val second = shareNumber(strip) ?: return false
+        val second = shareNumber(effective) ?: return false
         return try {
-            scan = StripScan.Recovered(recover(held, strip), first, second)
+            val words = recover(held, effective)
+            attempts.cancel()
+            stopProgress()
+            reading?.cancel()
+            scan = StripScan.Recovered(words, first, second)
             true
         } catch (e: VisionException) {
             val detail = e.message?.removePrefix("detail=")
-            combined = Capture.Failed(detail ?: "The shares could not be combined.")
+            editError = detail ?: "The shares could not be combined."
             false
         }
+    }
+
+    fun currentStrip(strip: StripReading): StripReading = reviewedStrip ?: strip
+
+    fun correctCell(strip: StripReading, row: Int, position: Int, text: String) {
+        try {
+            reviewedStrip = currentStrip(strip).withCell(row.toUInt(), position.toUInt(), text.uppercase())
+            editError = null
+        } catch (e: VisionException) { editError = e.message?.removePrefix("detail=") }
+    }
+
+    fun resetCell(strip: StripReading, row: Int, position: Int) {
+        try {
+            reviewedStrip = currentStrip(strip).withoutCellEdit(row.toUInt(), position.toUInt())
+            editError = null
+        } catch (e: VisionException) { editError = e.message?.removePrefix("detail=") }
+    }
+
+    fun correctRow(strip: StripReading, row: Int, text: String) {
+        val value = text.trim().uppercase()
+        if (value.length != 6 || value.any { it !in "=#ABCDEFGHIJKLMNOPQRSTUVWXYZ-" }) {
+            editError = "Enter exactly six worksheet symbols."
+            return
+        }
+        try {
+            var next = currentStrip(strip)
+            value.forEachIndexed { index, char -> next = next.withCell(row.toUInt(), index.toUInt(), char.toString()) }
+            reviewedStrip = next
+            editError = null
+        } catch (e: VisionException) { editError = e.message?.removePrefix("detail=") }
+    }
+
+    fun combinedReview(strip: StripReading): CombinedStripReview? {
+        val held = (scan as? StripScan.Scanning)?.held ?: return null
+        return try { reviewCombinedStrips(held, currentStrip(strip)) } catch (_: VisionException) { null }
     }
 }

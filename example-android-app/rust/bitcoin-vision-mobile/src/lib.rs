@@ -26,10 +26,10 @@ use bitcoin_vision_words::recogniser::{Preparation, Recogniser};
 use bitcoin_vision_words::scan::Outcome as ScanOutcome;
 use bitcoin_vision_words::words::Verdict;
 use bitcoin_vision_words::{ScanError, ScanOptions, ScanResult};
-use penlock::soft::combine;
 use penlock::soft::search::{Bip39Checksum, Filter, Floor, Outcome, search, slots};
+use penlock::soft::{Evidence, SoftDecoded, combine, decode_soft};
 use penlock::word::symbols_to_string;
-use penlock::{ShareCount, Word};
+use penlock::{Distribution, ShareCount, Symbol, Word};
 use penlock_scan::{Identity, ScannedShare};
 use rand::TryRngCore;
 
@@ -206,7 +206,13 @@ impl Scanner {
         Ok(read
             .shares
             .into_iter()
-            .map(|share| Arc::new(StripReading { share }))
+            .map(|share| {
+                Arc::new(StripReading {
+                    original: share.clone(),
+                    edits: vec![None; share.cells.len() * penlock::word::WORD_LEN],
+                    share,
+                })
+            })
             .collect())
     }
 }
@@ -215,6 +221,80 @@ impl Scanner {
 #[derive(uniffi::Object)]
 pub struct StripReading {
     share: ScannedShare,
+    original: ScannedShare,
+    edits: Vec<Option<Symbol>>,
+}
+
+/// Finished strip evidence for review. Cell readings never enter progress events.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct StripReview {
+    /// Printed strip marking, or unknown when it could not be read.
+    pub identity: StripIdentity,
+    /// Located strip polygon, top-left, top-right, bottom-right, bottom-left.
+    pub corners: Vec<f32>,
+    /// Rows in worksheet order.
+    pub rows: Vec<StripRowReview>,
+}
+
+/// One six-symbol row of a photographed strip.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct StripRowReview {
+    /// One-based row number.
+    pub number: u32,
+    /// Six cells; positions zero and one are shares of checksum symbols.
+    pub cells: Vec<StripCellReview>,
+}
+
+/// Original classifier evidence and an optional explicit human correction.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct StripCellReview {
+    /// Zero-based position within the row.
+    pub position: u32,
+    /// Original model symbol, absent when unreadable.
+    pub selected: Option<String>,
+    /// Model support for that symbol, absent when unreadable.
+    pub probability: Option<f32>,
+    /// Whether the model produced no usable reading.
+    pub unread: bool,
+    /// Human replacement; never overwrites the evidence above.
+    pub replacement: Option<String>,
+    /// Production grown-cell window in canonical photo coordinates, clockwise.
+    pub corners: Vec<f32>,
+}
+
+/// What local word-code decoding can establish after both share readings
+/// are combined. A single strip has no standalone checksum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum CombinedRowStatus {
+    /// A unique word code matches the combined symbols without inference.
+    Exact,
+    /// One symbol was corrected to a unique nearby word code.
+    Corrected,
+    /// Ambiguous or weak evidence; review both photographed rows.
+    NeedsReview,
+}
+
+/// One row's pair-level check before recovering or using the phrase.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct CombinedRowReview {
+    /// One-based row number.
+    pub number: u32,
+    /// Result of decoding the combined symbols against the word code.
+    pub status: CombinedRowStatus,
+    /// Zero-based position when exactly one symbol differs.
+    pub position: Option<u32>,
+    /// The combined top symbol at that position, if any.
+    pub observed: Option<String>,
+    /// The recovered word's symbol at that position, if any.
+    pub expected: Option<String>,
+}
+
+/// Combined evidence available after both individual strips were reviewed.
+/// This does not run phrase recovery or expose a seed phrase.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct CombinedStripReview {
+    /// Twelve rows in phrase order; no raw seed is sent through progress.
+    pub rows: Vec<CombinedRowReview>,
 }
 
 /// What the strip's printed marking said it was.
@@ -249,7 +329,121 @@ impl StripReading {
 
     /// Cells the recogniser could not read at all.
     pub fn unread(&self) -> u32 {
-        self.share.unread.len() as u32
+        self.original.unread.len() as u32
+    }
+
+    /// Immutable classifier evidence, explicit edits and native crop windows.
+    pub fn review(&self) -> StripReview {
+        use penlock_scan::cells::{Window, cell_window};
+        let frame = &self.original.located.frame;
+        let corners = [0usize, 1, 3, 2]
+            .into_iter()
+            .flat_map(|i| {
+                let (x, y) = frame.fiducials[i];
+                [x as f32, y as f32]
+            })
+            .collect();
+        let rows = self
+            .original
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| StripRowReview {
+                number: row as u32 + 1,
+                cells: cells
+                    .iter()
+                    .enumerate()
+                    .map(|(position, distribution)| {
+                        let unread = self.original.unread.contains(&(row, position));
+                        let best = distribution.argmax();
+                        let rect =
+                            cell_window(self.original.located.layout, row, position, Window::Grown);
+                        let corners = [
+                            (rect.x, rect.y),
+                            (rect.x + rect.w, rect.y),
+                            (rect.x + rect.w, rect.y + rect.h),
+                            (rect.x, rect.y + rect.h),
+                        ]
+                        .into_iter()
+                        .flat_map(|(x, y)| {
+                            let (x, y) = frame.to_photo(x, y);
+                            [x as f32, y as f32]
+                        })
+                        .collect();
+                        StripCellReview {
+                            position: position as u32,
+                            selected: (!unread).then(|| best.to_char().to_string()),
+                            probability: (!unread).then(|| distribution.p(best)),
+                            unread,
+                            replacement: self.edits[row * penlock::word::WORD_LEN + position]
+                                .map(|symbol| symbol.to_char().to_string()),
+                            corners,
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        StripReview {
+            identity: self.identity(),
+            corners,
+            rows,
+        }
+    }
+
+    /// Override one cell for recovery while retaining its original model read.
+    pub fn with_cell(
+        &self,
+        row: u32,
+        position: u32,
+        text: String,
+    ) -> Result<Arc<Self>, VisionError> {
+        let chars: Vec<_> = text.chars().collect();
+        let symbol = match chars.as_slice() {
+            [c] => Symbol::from_char(*c),
+            _ => None,
+        }
+        .ok_or_else(|| VisionError::Recover {
+            detail: "Choose one worksheet symbol: =, #, A–Z or -.".into(),
+        })?;
+        let row = row as usize;
+        let position = position as usize;
+        if row >= self.share.cells.len() || position >= penlock::word::WORD_LEN {
+            return Err(VisionError::Recover {
+                detail: "That cell is outside the photographed strip.".into(),
+            });
+        }
+        let mut edited = Self {
+            share: self.share.clone(),
+            original: self.original.clone(),
+            edits: self.edits.clone(),
+        };
+        edited.share.cells[row][position] = Distribution::one_hot(symbol);
+        edited.share.unread.retain(|&at| at != (row, position));
+        edited.edits[row * penlock::word::WORD_LEN + position] = Some(symbol);
+        Ok(Arc::new(edited))
+    }
+
+    /// Undo one correction, including the model's original unread state.
+    pub fn without_cell_edit(&self, row: u32, position: u32) -> Result<Arc<Self>, VisionError> {
+        let row = row as usize;
+        let position = position as usize;
+        if row >= self.share.cells.len() || position >= penlock::word::WORD_LEN {
+            return Err(VisionError::Recover {
+                detail: "That cell is outside the photographed strip.".into(),
+            });
+        }
+        let mut edited = Self {
+            share: self.share.clone(),
+            original: self.original.clone(),
+            edits: self.edits.clone(),
+        };
+        edited.share.cells[row][position] = self.original.cells[row][position];
+        edited.share.unread.retain(|&at| at != (row, position));
+        if self.original.unread.contains(&(row, position)) {
+            edited.share.unread.push((row, position));
+        }
+        edited.edits[row * penlock::word::WORD_LEN + position] = None;
+        Ok(Arc::new(edited))
     }
 }
 
@@ -260,6 +454,20 @@ impl StripReading {
 /// wallet descriptor will later confirm the phrase properly.
 #[uniffi::export]
 pub fn recover(a: Arc<StripReading>, b: Arc<StripReading>) -> Result<Vec<String>, VisionError> {
+    let combined = combined_strip_rows(&a, &b)?;
+    let ranked = slots(&combined, &[], Floor::DEFAULT);
+    match search(&ranked, &[&Bip39Checksum], None, 0) {
+        Outcome::Unconfirmed { words, .. } => Ok(words.iter().map(|w| w.to_string()).collect()),
+        _ => Err(VisionError::Recover {
+            detail: "no candidate phrase passed the BIP39 checksum".into(),
+        }),
+    }
+}
+
+fn combined_strip_rows(
+    a: &StripReading,
+    b: &StripReading,
+) -> Result<Vec<[Distribution; penlock::word::WORD_LEN]>, VisionError> {
     let index = |s: &StripReading| {
         s.share
             .identity
@@ -268,7 +476,12 @@ pub fn recover(a: Arc<StripReading>, b: Arc<StripReading>) -> Result<Vec<String>
                 detail: "recovery needs two share strips".into(),
             })
     };
-    let (index_a, index_b) = (index(&a)?, index(&b)?);
+    let (index_a, index_b) = (index(a)?, index(b)?);
+    if a.share.cells.len() != b.share.cells.len() || a.share.cells.len() != 12 {
+        return Err(VisionError::Recover {
+            detail: "both shares must contain twelve rows".into(),
+        });
+    }
     let mut combined = Vec::with_capacity(a.share.cells.len());
     for (x, y) in a.share.cells.iter().zip(&b.share.cells) {
         combined.push(
@@ -277,12 +490,182 @@ pub fn recover(a: Arc<StripReading>, b: Arc<StripReading>) -> Result<Vec<String>
             })?,
         );
     }
-    let ranked = slots(&combined, &[], Floor::DEFAULT);
-    match search(&ranked, &[&Bip39Checksum], None, 0) {
-        Outcome::Unconfirmed { words, .. } => Ok(words.iter().map(|w| w.to_string()).collect()),
-        _ => Err(VisionError::Recover {
-            detail: "no candidate phrase passed the BIP39 checksum".into(),
-        }),
+    Ok(combined)
+}
+
+/// Decode each combined row locally, without running whole-phrase recovery.
+/// A single strip cannot validate these checksums; this is pair-only.
+#[uniffi::export]
+pub fn review_combined_strips(
+    a: Arc<StripReading>,
+    b: Arc<StripReading>,
+) -> Result<CombinedStripReview, VisionError> {
+    let combined = combined_strip_rows(&a, &b)?;
+    let rows = combined
+        .iter()
+        .enumerate()
+        .map(|(row, readings)| {
+            let (status, one) = match decode_soft(readings) {
+                SoftDecoded::Exact { .. } => (CombinedRowStatus::Exact, None),
+                SoftDecoded::Resolved { evidence, .. } => match evidence.as_slice() {
+                    [
+                        Evidence::Substituted {
+                            position, from, to, ..
+                        },
+                    ] => (CombinedRowStatus::Corrected, Some((*position, *from, *to))),
+                    _ => (CombinedRowStatus::NeedsReview, None),
+                },
+                SoftDecoded::Candidates(_) | SoftDecoded::Unrecognized => {
+                    (CombinedRowStatus::NeedsReview, None)
+                }
+            };
+            CombinedRowReview {
+                number: row as u32 + 1,
+                status,
+                position: one.map(|(position, _, _)| position as u32),
+                observed: one.map(|(_, symbol, _)| symbol.to_char().to_string()),
+                expected: one.map(|(_, _, symbol)| symbol.to_char().to_string()),
+            }
+        })
+        .collect();
+    Ok(CombinedStripReview { rows })
+}
+
+#[cfg(test)]
+mod strip_review_tests {
+    use super::*;
+    use penlock::ShareIndex;
+    use penlock_scan::locate::{Identity, find_strip};
+    use penlock_scan::sheet::{cut_strip, front_png};
+
+    fn pair() -> (Arc<StripReading>, Arc<StripReading>) {
+        let sheet = front_png(None, 110.0).unwrap();
+        let strip =
+            penlock_scan::image::DynamicImage::ImageRgb8(cut_strip(&sheet, 110.0, 1)).to_luma8();
+        let found = find_strip(&strip).unwrap();
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let words = Word::parse_phrase(phrase).unwrap();
+        let make = |index: ShareIndex| {
+            let cells = words
+                .iter()
+                .map(|word| {
+                    let code = word.symbols();
+                    std::array::from_fn(|position| {
+                        let slope = Symbol::from_residue((position + 3) as u32);
+                        Distribution::one_hot(slope + code[position] * index.symbol())
+                    })
+                })
+                .collect();
+            let share = ScannedShare {
+                identity: Identity::Share(index),
+                cells,
+                unread: Vec::new(),
+                located: found.located.clone(),
+            };
+            Arc::new(StripReading {
+                original: share.clone(),
+                share,
+                edits: vec![None; 12 * penlock::word::WORD_LEN],
+            })
+        };
+        (make(ShareIndex::ONE), make(ShareIndex::TWO))
+    }
+
+    #[test]
+    fn finished_review_projects_real_crop_windows_and_retains_original_after_edit() {
+        let (a, b) = pair();
+        let review = a.review();
+        assert_eq!(review.identity, StripIdentity::Share { index: 1 });
+        assert_eq!(review.rows.len(), 12);
+        assert_eq!(review.rows[0].cells.len(), 6);
+        assert_eq!(review.corners.len(), 8);
+        assert!(
+            review
+                .rows
+                .iter()
+                .flat_map(|r| &r.cells)
+                .all(|c| c.corners.len() == 8 && c.corners.iter().all(|x| x.is_finite()))
+        );
+        assert_eq!(recover(a.clone(), b.clone()).unwrap()[11], "about");
+        assert!(
+            review_combined_strips(a.clone(), b.clone())
+                .unwrap()
+                .rows
+                .iter()
+                .all(|r| r.status == CombinedRowStatus::Exact)
+        );
+
+        let before = combined_strip_rows(&a, &a).unwrap_err();
+        assert!(before.to_string().contains("share"));
+        let original = &review.rows[0].cells[0];
+        let replacement = if original.selected.as_deref() == Some("A") {
+            "B"
+        } else {
+            "A"
+        };
+        let edited = a.with_cell(0, 0, replacement.into()).unwrap();
+        let changed = &edited.review().rows[0].cells[0];
+        assert_eq!(changed.selected, original.selected);
+        assert_eq!(changed.probability, original.probability);
+        assert_eq!(changed.replacement.as_deref(), Some(replacement));
+        assert_eq!(
+            edited.share.cells[0][0].argmax().to_char().to_string(),
+            replacement
+        );
+        let combined_before = combined_strip_rows(&a, &b).unwrap();
+        let combined_after = combined_strip_rows(&edited, &b).unwrap();
+        assert_ne!(
+            combined_before[0][0].argmax(),
+            combined_after[0][0].argmax()
+        );
+        assert_eq!(
+            edited.without_cell_edit(0, 0).unwrap().share.cells[0][0],
+            a.share.cells[0][0]
+        );
+    }
+
+    #[test]
+    fn pair_check_reports_a_corrected_symbol_only_after_both_shares_are_combined() {
+        let (a, b) = pair();
+        let bad = if a.share.cells[0][2].argmax() == Symbol::ZERO {
+            "#"
+        } else {
+            "="
+        };
+        let edited = a.with_cell(0, 2, bad.into()).unwrap();
+        let rows = review_combined_strips(edited, b).unwrap().rows;
+        assert_eq!(rows[0].status, CombinedRowStatus::Corrected);
+        assert_eq!(rows[0].position, Some(2));
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|row| row.status == CombinedRowStatus::Exact)
+        );
+    }
+
+    #[test]
+    fn unread_cell_stays_visible_as_original_evidence_after_a_override() {
+        let (a, _) = pair();
+        let mut missing = (*a).share.clone();
+        missing.cells[3][4] = Distribution::uniform();
+        missing.unread.push((3, 4));
+        let a = StripReading {
+            original: missing.clone(),
+            share: missing,
+            edits: vec![None; 12 * penlock::word::WORD_LEN],
+        };
+        assert!(a.review().rows[3].cells[4].unread);
+        assert_eq!(a.review().rows[3].cells[4].selected, None);
+        let edited = a.with_cell(3, 4, "A".into()).unwrap();
+        assert!(edited.review().rows[3].cells[4].unread);
+        assert_eq!(
+            edited.review().rows[3].cells[4].replacement.as_deref(),
+            Some("A")
+        );
+        assert!(!edited.share.unread.contains(&(3, 4)));
+        let restored = edited.without_cell_edit(3, 4).unwrap();
+        assert!(restored.share.unread.contains(&(3, 4)));
+        assert_eq!(restored.share.cells[3][4], Distribution::uniform());
     }
 }
 

@@ -280,6 +280,7 @@ fun CapturedPhotoScreen(
     onRetake: () -> Unit,
     progress: ScanProgressState? = null,
     onProgressPresented: (Int, ULong) -> Unit = { _, _ -> },
+    stripProgress: StripProgressState? = null,
     extra: @Composable ColumnScope.() -> Unit = {},
 ) {
     BackHandler { onRetake() }
@@ -288,7 +289,8 @@ fun CapturedPhotoScreen(
         onBack = onRetake,
         actions = {
             if (error == null) {
-                ScanProcessingIndicator(progress)
+                if (stripProgress != null) StripProcessingIndicator(stripProgress)
+                else ScanProcessingIndicator(progress)
                 TextButton(
                     onClick = onRetake,
                     modifier = Modifier.fillMaxWidth().testTag("cancel-retake"),
@@ -309,7 +311,11 @@ fun CapturedPhotoScreen(
                 .testTag("captured"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (photo != null && progress != null && error == null) {
+            if (photo != null && stripProgress != null && error == null) {
+                StripProgressPhoto(photo, stripProgress, onPresented = {
+                    onProgressPresented(stripProgress.token, stripProgress.sequence)
+                })
+            } else if (photo != null && progress != null && error == null) {
                 ScanProgressPhoto(photo, progress, onPresented = {
                     onProgressPresented(progress.token, progress.sequence)
                 })
@@ -330,11 +336,12 @@ fun CapturedPhotoScreen(
                     )
                 }
             }
-            if (photo == null && progress != null && error == null) {
+            if (photo == null && (progress != null || stripProgress != null) && error == null) {
                 // Preparation has no preview yet, but still needs an actual displayed frame.
                 Box(Modifier.fillMaxWidth().size(1.dp).drawWithContent {
                     drawContent()
-                    onProgressPresented(progress.token, progress.sequence)
+                    if (stripProgress != null) onProgressPresented(stripProgress.token, stripProgress.sequence)
+                    else if (progress != null) onProgressPresented(progress.token, progress.sequence)
                 })
             }
             if (error != null) {
@@ -347,6 +354,21 @@ fun CapturedPhotoScreen(
                 extra()
             }
         }
+    }
+}
+
+@Composable
+private fun StripProcessingIndicator(progress: StripProgressState) {
+    val target = (progress.phase.ordinal +
+        (progress.total?.takeIf { it > 0u }?.let { progress.completed.toFloat() / it.toFloat() } ?: 0.15f)) / 5f
+    LinearProgressIndicator(progress = { if (progress.finished) 1f else target.coerceIn(0.01f, 0.99f) },
+        modifier = Modifier.fillMaxWidth().testTag("reading-progress"))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 8.dp)) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(progress.label, style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.testTag("scan-phase").semantics { liveRegion = LiveRegionMode.Polite })
     }
 }
 

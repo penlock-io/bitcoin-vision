@@ -40,3 +40,4 @@ required-features = ["bindgen"]
 # Test fixtures build a selection and a page direction the way a scan
 # would, through stages the shipped API does not expose.
 bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx", "research"] }
+penlock-scan = { path = "../../../penlock-scan", default-features = false, features = ["onnx", "print"] }
