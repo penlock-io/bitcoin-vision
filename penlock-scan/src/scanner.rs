@@ -10,10 +10,13 @@ use image::RgbImage;
 use penlock::word::WORD_LEN;
 use penlock::{Distribution, ShareIndex, Symbol};
 use serde::Serialize;
+use std::sync::Arc;
+
+use bitcoin_vision_core::scan::{Delta, Emitter, Outcome, Pipeline, ScanState};
 
 use crate::locate::{Identity, LocateError};
 use crate::model::{Model, ModelError};
-use crate::scan::ScannedShare;
+use crate::strip_scan::ScannedShare;
 
 /// The model files a scanner needs, as bytes the caller owns.
 pub struct ModelBytes<'a> {
@@ -32,7 +35,7 @@ pub struct ScanOptions {
 }
 
 /// A model-loading, image-decoding or strip-locating error.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ScanError {
     /// The classifier could not be loaded or failed on a cell.
     Model(ModelError),
@@ -54,11 +57,11 @@ impl std::fmt::Display for ScanError {
 
 impl std::error::Error for ScanError {}
 
-impl From<crate::scan::ReadError> for ScanError {
-    fn from(error: crate::scan::ReadError) -> Self {
+impl From<crate::strip_scan::ReadError> for ScanError {
+    fn from(error: crate::strip_scan::ReadError) -> Self {
         match error {
-            crate::scan::ReadError::Locate(e) => Self::Locate(e),
-            crate::scan::ReadError::Model(e) => Self::Model(e),
+            crate::strip_scan::ReadError::Locate(e) => Self::Locate(e),
+            crate::strip_scan::ReadError::Model(e) => Self::Model(e),
         }
     }
 }
@@ -108,14 +111,8 @@ impl Scanner {
         image: &RgbImage,
         options: ScanOptions,
     ) -> Result<ScanResult, ScanError> {
-        admit(image)?;
-        let share = crate::scan::scan(image, self.model.as_ref())?;
-        Ok(ScanResult {
-            width: image.width(),
-            height: image.height(),
-            shares: vec![share],
-            diagnostics: options.diagnostics,
-        })
+        let (scan, _) = self.start(image.clone(), options);
+        finish(scan.run())
     }
 
     /// Every strip in a photograph of an uncut sheet, in reading order.
@@ -129,13 +126,237 @@ impl Scanner {
         image: &RgbImage,
         options: ScanOptions,
     ) -> Result<ScanResult, ScanError> {
-        admit(image)?;
-        Ok(ScanResult {
-            width: image.width(),
-            height: image.height(),
-            shares: crate::scan::scan_all(image, self.model.as_ref())?,
-            diagnostics: options.diagnostics,
+        let (scan, _) = self.start_all(image.clone(), options);
+        finish(scan.run())
+    }
+
+    /// Prepares one canonical photo for a caller-driven scan. The caller runs
+    /// `Scan::run` on its chosen thread and may poll the returned state before,
+    /// during, or after it runs. Decoding and model loading stay outside it.
+    pub fn start(&self, photo: RgbImage, options: ScanOptions) -> (Scan<'_>, ScanState<Strips>) {
+        self.prepare(photo, options, false)
+    }
+
+    /// As `start`, reading every strip on an uncut sheet in reading order.
+    pub fn start_all(
+        &self,
+        photo: RgbImage,
+        options: ScanOptions,
+    ) -> (Scan<'_>, ScanState<Strips>) {
+        self.prepare(photo, options, true)
+    }
+
+    fn prepare(
+        &self,
+        photo: RgbImage,
+        options: ScanOptions,
+        all: bool,
+    ) -> (Scan<'_>, ScanState<Strips>) {
+        let (emitter, state) = bitcoin_vision_core::scan::record();
+        (
+            Scan {
+                scanner: self,
+                photo,
+                options,
+                all,
+                emitter,
+            },
+            state,
+        )
+    }
+}
+
+fn finish(outcome: Outcome<Strips>) -> Result<ScanResult, ScanError> {
+    match outcome {
+        Outcome::Finished(result) => Ok(Arc::try_unwrap(result).unwrap_or_else(|r| (*r).clone())),
+        Outcome::Failed(error) => Err(error),
+        Outcome::Cancelled | Outcome::Abandoned => {
+            unreachable!("a synchronous scan runs without an external cancellation handle")
+        }
+    }
+}
+
+/// The strip pipeline's stages, shared with the word scan protocol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// Validate the decoded photo.
+    Admitting,
+    /// Locate strips in canonical photo pixels.
+    Locating,
+    /// Report each strip's format and identity.
+    Identifying,
+    /// Read the cells in each strip.
+    Reading,
+    /// Assemble the result.
+    Packing,
+}
+
+/// What one located strip contributes to the retained scan state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StripRegion {
+    /// Fiducial positions in canonical photo pixels.
+    pub quad: [(f64, f64); 4],
+    /// Identity obtained from the printed marks.
+    pub identity: Identity,
+    /// All cell probabilities, once read. `None` means location is known but
+    /// inference has not completed.
+    pub reading: Option<crate::model::CellReadings>,
+}
+
+/// The strip pipeline's implementation of the common scan protocol.
+#[derive(Debug)]
+pub struct Strips;
+
+impl Pipeline for Strips {
+    type Phase = Phase;
+    type Region = StripRegion;
+    type Output = ScanResult;
+    type Error = ScanError;
+}
+
+/// A scan ready to run on the caller's thread.
+pub struct Scan<'a> {
+    scanner: &'a Scanner,
+    photo: RgbImage,
+    options: ScanOptions,
+    all: bool,
+    emitter: Emitter<Strips>,
+}
+
+impl Scan<'_> {
+    /// Runs the scan and records exactly one terminal outcome.
+    pub fn run(self) -> Outcome<Strips> {
+        let _cancellable = self.emitter.cancellation().enter();
+        let outcome: Outcome<Strips> = match self.read() {
+            _ if self.emitter.cancel_requested() => Outcome::Cancelled,
+            Ok(result) => Outcome::Finished(Arc::new(result)),
+            Err(error) => Outcome::Failed(error),
+        };
+        let terminal: Delta<Strips> = match &outcome {
+            Outcome::Finished(result) => Delta::Finished(result.clone()),
+            Outcome::Failed(error) => Delta::Failed(error.clone()),
+            Outcome::Cancelled => Delta::Cancelled,
+            Outcome::Abandoned => unreachable!("run ends its own record"),
+        };
+        self.emitter
+            .push(terminal)
+            .expect("run owns the open record");
+        outcome
+    }
+
+    fn read(&self) -> Result<ScanResult, ScanError> {
+        let emit = &self.emitter;
+        emit.push(Delta::Work {
+            phase: Phase::Admitting,
+            completed: 0,
+            total: None,
         })
+        .expect("open record");
+        admit(&self.photo)?;
+        emit.push(Delta::Photo {
+            width: self.photo.width(),
+            height: self.photo.height(),
+        })
+        .expect("open record");
+        if emit.cancel_requested() {
+            return Ok(self.empty_result());
+        }
+        emit.push(Delta::Work {
+            phase: Phase::Locating,
+            completed: 0,
+            total: None,
+        })
+        .expect("open record");
+        let gray = image::DynamicImage::ImageRgb8(self.photo.clone()).into_luma8();
+        let found = if self.all {
+            crate::locate::find_strips(&gray).map_err(ScanError::Locate)?
+        } else {
+            vec![crate::locate::find_strip(&gray).map_err(ScanError::Locate)?]
+        };
+        let total = found.len() as u32;
+        emit.push(Delta::Work {
+            phase: Phase::Identifying,
+            completed: 0,
+            total: Some(total),
+        })
+        .expect("open record");
+        for (id, strip) in found.iter().enumerate() {
+            emit.push(Delta::Region {
+                id: id as u32,
+                region: StripRegion {
+                    quad: strip.located.frame.fiducials,
+                    identity: strip.identity,
+                    reading: None,
+                },
+            })
+            .expect("open record");
+            emit.push(Delta::Work {
+                phase: Phase::Identifying,
+                completed: id as u32 + 1,
+                total: Some(total),
+            })
+            .expect("open record");
+        }
+        emit.push(Delta::Work {
+            phase: Phase::Reading,
+            completed: 0,
+            total: Some(total),
+        })
+        .expect("open record");
+        let mut shares = Vec::with_capacity(found.len());
+        for (id, strip) in found.into_iter().enumerate() {
+            if emit.cancel_requested() {
+                return Ok(self.empty_result());
+            }
+            let share = crate::strip_scan::read_found(strip, self.scanner.model.as_ref())?;
+            emit.push(Delta::Region {
+                id: id as u32,
+                region: StripRegion {
+                    quad: share.located.frame.fiducials,
+                    identity: share.identity,
+                    reading: Some(crate::model::CellReadings {
+                        cells: share.cells.clone(),
+                        unread: share.unread.clone(),
+                    }),
+                },
+            })
+            .expect("open record");
+            shares.push(share);
+            emit.push(Delta::Work {
+                phase: Phase::Reading,
+                completed: shares.len() as u32,
+                total: Some(total),
+            })
+            .expect("open record");
+        }
+        emit.push(Delta::Work {
+            phase: Phase::Packing,
+            completed: 0,
+            total: Some(1),
+        })
+        .expect("open record");
+        let result = ScanResult {
+            width: self.photo.width(),
+            height: self.photo.height(),
+            shares,
+            diagnostics: self.options.diagnostics,
+        };
+        emit.push(Delta::Work {
+            phase: Phase::Packing,
+            completed: 1,
+            total: Some(1),
+        })
+        .expect("open record");
+        Ok(result)
+    }
+
+    fn empty_result(&self) -> ScanResult {
+        ScanResult {
+            width: self.photo.width(),
+            height: self.photo.height(),
+            shares: Vec::new(),
+            diagnostics: self.options.diagnostics,
+        }
     }
 }
 
@@ -152,6 +373,7 @@ fn decode(encoded: &[u8], options: ScanOptions) -> Result<RgbImage, ScanError> {
 }
 
 /// Native readings plus the photograph they came from.
+#[derive(Clone, Debug)]
 pub struct ScanResult {
     /// Canonical image dimensions.
     pub width: u32,

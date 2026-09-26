@@ -7,6 +7,7 @@
 use penlock::word::WORD_LEN;
 use penlock::{Distribution, Symbol};
 use penlock_scan::model::{CellReadings, Model, ModelError};
+use penlock_scan::scan::{Cursor, Delta, Outcome};
 use penlock_scan::{CellImage, ScanOptions, Scanner};
 
 /// What the pipeline promises a caller holds whatever is behind the cells, so
@@ -35,6 +36,109 @@ impl Model for Certain {
 
 fn scanner() -> Scanner {
     Scanner::from_model(Box::new(Certain('K')))
+}
+
+struct Paused {
+    entered: std::sync::Arc<std::sync::Barrier>,
+    release: std::sync::Arc<std::sync::Barrier>,
+}
+
+impl Model for Paused {
+    fn read_cells(
+        &self,
+        cells: &[[CellImage; WORD_LEN]],
+        rectified: &image::GrayImage,
+    ) -> Result<CellReadings, ModelError> {
+        self.entered.wait();
+        self.release.wait();
+        Certain('K').read_cells(cells, rectified)
+    }
+
+    fn spec(&self) -> String {
+        "paused test model".into()
+    }
+}
+
+#[test]
+fn located_strip_and_cells_are_inspectable_before_and_after_terminal() {
+    let entered = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let release = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let scanner = Scanner::from_model(Box::new(Paused {
+        entered: entered.clone(),
+        release: release.clone(),
+    }));
+    let (scan, state) = scanner.start(strip(), ScanOptions::default());
+    std::thread::scope(|threads| {
+        let running = threads.spawn(|| scan.run());
+        entered.wait();
+        let found = state.snapshot();
+        release.wait();
+        assert_eq!(found.regions.len(), 1);
+        assert!(found.regions[&0].reading.is_none());
+        assert!(found.outcome.is_none());
+        assert!(matches!(running.join().unwrap(), Outcome::Finished(_)));
+        let settled = state.snapshot();
+        let reading = settled.regions[&0].reading.as_ref().unwrap();
+        assert_eq!(reading.cells.len(), 12);
+        assert!(matches!(settled.outcome, Some(Outcome::Finished(_))));
+        let (events, _) = state.poll(Cursor::default());
+        assert!(matches!(events.first(), Some(Delta::Work { .. })));
+        assert!(matches!(events.last(), Some(Delta::Finished(_))));
+        let phases: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Delta::Work {
+                    phase,
+                    completed: 0,
+                    ..
+                } => Some(*phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            phases,
+            [
+                penlock_scan::Phase::Admitting,
+                penlock_scan::Phase::Locating,
+                penlock_scan::Phase::Identifying,
+                penlock_scan::Phase::Reading,
+                penlock_scan::Phase::Packing,
+            ]
+        );
+        assert!(events.iter().any(|event| matches!(event,
+            Delta::Region { region, .. } if region.reading.is_none())));
+        assert!(events.iter().any(|event| matches!(event,
+            Delta::Region { region, .. } if region.reading.is_some())));
+    });
+}
+
+struct Broken;
+
+impl Model for Broken {
+    fn read_cells(
+        &self,
+        _cells: &[[CellImage; WORD_LEN]],
+        _rectified: &image::GrayImage,
+    ) -> Result<CellReadings, ModelError> {
+        Err(ModelError::Shape {
+            detail: "test failure".into(),
+        })
+    }
+
+    fn spec(&self) -> String {
+        "broken test model".into()
+    }
+}
+
+#[test]
+fn failed_strip_scan_retains_its_found_geometry() {
+    let scanner = Scanner::from_model(Box::new(Broken));
+    let (scan, state) = scanner.start(strip(), ScanOptions::default());
+    assert!(matches!(scan.run(), Outcome::Failed(_)));
+    let snapshot = state.snapshot();
+    assert!(matches!(snapshot.outcome, Some(Outcome::Failed(_))));
+    assert_eq!(snapshot.regions.len(), 1);
+    assert!(snapshot.regions[&0].reading.is_none());
 }
 
 fn strip() -> image::RgbImage {

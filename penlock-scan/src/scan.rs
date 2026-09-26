@@ -2,11 +2,10 @@
 
 use std::fmt;
 
-use image::RgbImage;
 use penlock::word::WORD_LEN;
 use penlock::{Distribution, Share, Symbol};
 
-use crate::locate::{Found, Identity, LocateError, Located, find_strip, find_strips};
+use crate::locate::{Found, Identity, LocateError, Located};
 use crate::model::{Model, ModelError};
 
 /// A strip read from a photo, every symbol as a distribution.
@@ -87,25 +86,8 @@ impl fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
-/// Reads the one strip in `photo` with `model`. The identity comes from
-/// the printed code and may be [`Identity::Unknown`]; the caller decides
-/// what to do with a strip that is not a share.
-pub fn scan(photo: &RgbImage, model: &dyn Model) -> Result<ScannedShare, ReadError> {
-    let gray = image::DynamicImage::ImageRgb8(photo.clone()).into_luma8();
-    read_found(find_strip(&gray).map_err(ReadError::Locate)?, model)
-}
-
-/// Reads every strip in `photo` — a not-yet-cut sheet — in reading order.
-pub fn scan_all(photo: &RgbImage, model: &dyn Model) -> Result<Vec<ScannedShare>, ReadError> {
-    let gray = image::DynamicImage::ImageRgb8(photo.clone()).into_luma8();
-    find_strips(&gray)
-        .map_err(ReadError::Locate)?
-        .into_iter()
-        .map(|found| read_found(found, model))
-        .collect()
-}
-
-fn read_found(found: Found, model: &dyn Model) -> Result<ScannedShare, ReadError> {
+/// Reads one already located strip for the caller-driven scan.
+pub(crate) fn read_found(found: Found, model: &dyn Model) -> Result<ScannedShare, ReadError> {
     let read = model
         .read_cells(&found.cells, &found.rectified)
         .map_err(ReadError::Model)?;

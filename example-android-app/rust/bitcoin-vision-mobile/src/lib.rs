@@ -40,6 +40,7 @@ mod progress;
 mod psbt;
 mod qr;
 mod sources;
+mod strip_progress;
 
 pub use boxes::{BoxObserver, BoxProgressEvent, BoxProgressUpdate, BoxScan, FinalBox};
 pub use diagnostics::{DiagnosedScan, DiagnosticFile};
@@ -51,6 +52,9 @@ pub use progress::ProgressCallbackProbe;
 pub use progress::{
     DeliveryWatch, ProgressDeliveryError, ScanProgressEvent, ScanProgressObserver,
     ScanProgressUpdate, ScanRegion, ScanRegionMapping, ScanRegionState, ScanWorkPhase,
+};
+pub use strip_progress::{
+    StripProgressEvent, StripProgressObserver, StripProgressUpdate, StripWorkPhase,
 };
 
 pub use psbt::{FEE_CEILING, OutputLine, Review, review_psbt, sign_review};
@@ -144,13 +148,61 @@ impl Scanner {
         photo: Vec<u8>,
         orientation: u8,
     ) -> Result<Vec<Arc<StripReading>>, VisionError> {
-        let photo = photo::decode(&photo, orientation)?;
-        let read = self
+        self.read_oriented_inner(photo, orientation, None)
+    }
+
+    /// Reads strips while delivering ordered stage and geometry updates.
+    /// The callback receives no photo data, cell probabilities or share text.
+    pub fn read_oriented_with_progress(
+        &self,
+        photo: Vec<u8>,
+        orientation: u8,
+        observer: Box<dyn StripProgressObserver>,
+    ) -> Result<Vec<Arc<StripReading>>, VisionError> {
+        self.read_oriented_inner(photo, orientation, Some(observer))
+    }
+
+    fn read_oriented_inner(
+        &self,
+        photo: Vec<u8>,
+        orientation: u8,
+        observer: Option<Box<dyn StripProgressObserver>>,
+    ) -> Result<Vec<Arc<StripReading>>, VisionError> {
+        let photo = photo::decode(&photo, orientation).map_err(|error| {
+            if let Some(observer) = observer.as_deref() {
+                let _ = observer.on_progress(StripProgressEvent {
+                    sequence: 1,
+                    update: StripProgressUpdate::Failed,
+                });
+            }
+            error
+        })?;
+        let (scan, state) = self
             .scanner
-            .scan_all_rgb(&photo, penlock_scan::ScanOptions::default())
-            .map_err(|e| VisionError::Scan {
-                detail: e.to_string(),
-            })?;
+            .start_all(photo, penlock_scan::ScanOptions::default());
+        let outcome = std::thread::scope(|threads| {
+            if let Some(observer) = observer.as_deref() {
+                let state = state.clone();
+                threads.spawn(move || strip_progress::forward(&state, observer));
+            }
+            scan.run()
+        });
+        drop(state);
+        let read = match outcome {
+            penlock_scan::scan::Outcome::Finished(result) => {
+                Arc::try_unwrap(result).unwrap_or_else(|shared| (*shared).clone())
+            }
+            penlock_scan::scan::Outcome::Failed(error) => {
+                return Err(VisionError::Scan {
+                    detail: error.to_string(),
+                });
+            }
+            penlock_scan::scan::Outcome::Cancelled | penlock_scan::scan::Outcome::Abandoned => {
+                return Err(VisionError::Scan {
+                    detail: "the scan stopped before it finished".into(),
+                });
+            }
+        };
         Ok(read
             .shares
             .into_iter()

@@ -132,6 +132,12 @@ pub use vocabulary::Word;
 /// let _ = bitcoin_vision_words::PageLayout::new;
 /// ```
 /// ```compile_fail
+/// let _ = bitcoin_vision_words::PageLayout::selected;
+/// ```
+/// ```compile_fail
+/// let _ = bitcoin_vision_words::PageLayout::reach_groups;
+/// ```
+/// ```compile_fail
 /// let _ = bitcoin_vision_words::hybrid::select_bounded;
 /// ```
 /// ```compile_fail

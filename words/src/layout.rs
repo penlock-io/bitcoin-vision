@@ -97,10 +97,11 @@ impl PageLayout {
         }
     }
 
-    /// Retains selected observations in the supplied order, preserving their
-    /// existing group membership without clustering again. Removed fragments
-    /// cannot contribute bounds or scale to subsequent reach components.
-    pub fn selected(&self, order: &[usize]) -> Self {
+    stage! {
+        /// Retains selected observations in the supplied order, preserving their
+        /// existing group membership without clustering again. Removed fragments
+        /// cannot contribute bounds or scale to subsequent reach components.
+        pub fn selected(&self, order: &[usize]) -> Self {
         let mut inverse = vec![None; self.bounds.len()];
         for (new, &old) in order.iter().enumerate() {
             assert!(inverse[old].is_none(), "layout needs unique observations");
@@ -118,12 +119,15 @@ impl PageLayout {
             bounds: order.iter().map(|&i| self.bounds[i]).collect(),
             writing: self.writing,
         }
+        }
     }
 
-    /// Eligible observations linked by the existing height-scaled reach rule.
-    /// Ineligible observations do not bridge components or set their scale.
-    pub fn reach_groups(&self, eligible: &[bool]) -> Vec<Vec<usize>> {
-        self.reach_groups_with_scale(eligible).0
+    stage! {
+        /// Eligible observations linked by the existing height-scaled reach rule.
+        /// Ineligible observations do not bridge components or set their scale.
+        pub fn reach_groups(&self, eligible: &[bool]) -> Vec<Vec<usize>> {
+            self.reach_groups_with_scale(eligible).0
+        }
     }
 
     pub(crate) fn observation_bounds(&self, i: usize) -> [f32; 4] {

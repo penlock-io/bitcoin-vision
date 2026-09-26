@@ -68,7 +68,7 @@ reports the correction rather than applying it silently.
 ## Where it lives
 
 `penlock-scan` owns the photograph-to-symbols half (`locate`, `cells`, `model`,
-`scan`), and `penlock` owns the arithmetic (`split`, `recover`, `verify`, and the wheel the paper
+`Scanner`), and `penlock` owns the arithmetic (`split`, `recover`, `verify`, and the wheel the paper
 version is). Both are plain Rust crates. `penlock-scan` also renders
 worksheets and strips (`sheet`, `template`) on `bitcoin-vision-forms`, which is
 how the test fixtures are made.
@@ -93,6 +93,15 @@ its limits — 64 MiB encoded, 40 million pixels — are `bitcoin-vision-core`'s
 `decode_image`, so both pipelines read the same files the same way rather than
 each carrying its own decoder. `document()` projects decisions already made; it does
 not rectify or reclassify anything.
+
+For progress, decode the photo first and call `Scanner::start` for one strip or
+`Scanner::start_all` for an uncut sheet. Each returns a scan to run on the
+caller's thread and a cloneable `ScanState` from the shared `scan` protocol.
+Polling or waiting on the state returns every delta since the supplied cursor;
+`snapshot()` keeps located strip geometry and any completed cell probabilities
+available during the scan and after it finishes, fails, or is cancelled. The
+strip IDs are stable for that attempt. The synchronous methods above use the
+same scan path to completion.
 
 The model is `penlock-scan/models/cell-reference.onnx`; it lives with
 `penlock-scan` because that is what loads it. The word pipeline,
