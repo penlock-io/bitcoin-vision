@@ -108,7 +108,7 @@ default: `bitcoin_vision::words` is the word-list pipeline and
 This repository contains the required ONNX models. Use the `bundled-models`
 feature with a local path or version-pinned Git dependency; there is no runtime
 download or network service. The repository is
-`https://github.com/penlock-io/llscan`. The approximately 24.7 MB model
+`https://github.com/llfourn/bitcoin-vision`. The approximately 24.7 MB model
 set makes a small crates.io package a separate distribution decision, not
 something achieved by hiding the models at runtime.
 
@@ -234,6 +234,7 @@ the private training or scan corpus. The lockfile records the dependency graph
 used for verification. A downstream Git dependency uses the downstream lockfile;
 commit that lockfile to pin its complete graph as well as the crate revision.
 
-This local candidate remains `publish = false`. Its inherited lockfile contains
-yanked `chacha20 0.10.1`; the release review must address that without silently
-mixing a dependency upgrade into the extraction comparison.
+This repository remains `publish = false`: publishing it on GitHub is not a
+crates.io release. The current lockfile pins `chacha20 0.10.2`, not the yanked
+`0.10.1` found in an earlier revision. Git consumers use their own lockfile;
+pin the dependency graph in the consuming application as well as this revision.
