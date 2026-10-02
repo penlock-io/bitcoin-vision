@@ -12,6 +12,7 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 bdk_wallet = { version = "3.1.0", features = ["keys-bip39"] }
+bitcoin-vision-core = { path = "../../../core" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx"] }
 penlock = { path = "../../../penlock", features = ["wallet"] }

@@ -25,13 +25,45 @@ pub struct ModelBytes<'a> {
     pub dictionary: &'a str,
 }
 
+/// Provenance of the canonical photo's top, separate from its pixel transform.
+/// An identity EXIF transform alone does not establish that the writing is up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PhotoUp {
+    /// Legacy caller, stored raster, or missing metadata.
+    #[default]
+    Unknown,
+    /// Capture-time camera metadata, including rotation zero.
+    Camera,
+    /// Valid file EXIF orientation, including orientation 1.
+    Exif,
+    /// Caller explicitly declares the canonical pixels upright.
+    Explicit,
+}
+
+impl PhotoUp {
+    /// Stable provenance name for diagnostics.
+    pub fn source(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Camera => "camera",
+            Self::Exif => "exif",
+            Self::Explicit => "explicit",
+        }
+    }
+
+    /// Whether the caller supplied evidence of photo-up.
+    pub fn known(self) -> bool {
+        self != Self::Unknown
+    }
+}
+
 /// Per-call settings. Options never alter crop padding or vocabulary selection.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ScanOptions {
     /// Retain detailed processing decisions in the result (may contain text).
     pub diagnostics: bool,
     /// Independent evidence that the supplied decoded image is upright.
-    pub photo_up: crate::page_frame::PhotoUp,
+    pub photo_up: PhotoUp,
     /// Explicit EXIF transform (1..=8), overriding embedded metadata. Use1
     /// when a caller already normalized the pixels. None reads embedded EXIF.
     /// This option applies only to encoded image input, never `scan_rgb`.
@@ -87,7 +119,10 @@ pub struct ScanResult {
     #[cfg(feature = "extent-experiment")]
     pub extent: Option<Arc<crate::extent::Report>>,
     /// Observations, exact recognition crops, candidates and label evidence.
+    #[cfg(feature = "research")]
     pub page: PageScan,
+    #[cfg(not(feature = "research"))]
+    pub(crate) page: PageScan,
     /// Final output regions, mapped to the page observations by the scanner.
     pub regions: Vec<crate::progress::FinalRegion>,
 }
@@ -239,7 +274,7 @@ pub struct Words;
 #[derive(Clone, Debug, PartialEq)]
 pub struct WordRegion {
     /// Where it is, in the photo's canonical pixels.
-    pub quad: crate::detect::Quad,
+    pub quad: [(f32, f32); 4],
     /// How far its reading has got.
     pub state: crate::progress::RegionState,
     /// What it was provisionally read as, once read. Word text.
@@ -421,7 +456,7 @@ impl crate::progress::Observer for Recorder<'_> {
             Event::Region(r) => Delta::Region {
                 id: r.id,
                 region: WordRegion {
-                    quad: r.quad,
+                    quad: r.quad.0,
                     state: r.state,
                     reading: r.reading,
                 },
@@ -429,7 +464,7 @@ impl crate::progress::Observer for Recorder<'_> {
             Event::Replaced { region, parents } => Delta::Replaced {
                 id: region.id,
                 region: WordRegion {
-                    quad: region.quad,
+                    quad: region.quad.0,
                     state: region.state,
                     reading: region.reading,
                 },

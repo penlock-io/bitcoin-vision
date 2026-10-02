@@ -2,7 +2,9 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use bitcoin_vision_words::{boxes as core, progress};
+use bitcoin_vision_words::review::ReviewBoxes;
+
+use crate::progress;
 
 use crate::{ProgressDeliveryError, ScanRegion, ScanWorkPhase, VisionError};
 
@@ -26,8 +28,8 @@ pub struct BoxScan {
     pub boxes: Vec<FinalBox>,
 }
 
-impl From<core::BoxScan> for BoxScan {
-    fn from(scan: core::BoxScan) -> Self {
+impl From<ReviewBoxes> for BoxScan {
+    fn from(scan: ReviewBoxes) -> Self {
         Self {
             width: scan.width,
             height: scan.height,
@@ -36,7 +38,7 @@ impl From<core::BoxScan> for BoxScan {
                 .into_iter()
                 .map(|b| FinalBox {
                     id: b.id,
-                    corners: b.quad.0.into_iter().flat_map(|(x, y)| [x, y]).collect(),
+                    corners: b.quad.into_iter().flat_map(|(x, y)| [x, y]).collect(),
                 })
                 .collect(),
         }
@@ -143,7 +145,7 @@ impl Callback {
 
     pub(crate) fn complete(
         &self,
-        run: impl FnOnce() -> Result<core::BoxScan, VisionError>,
+        run: impl FnOnce() -> Result<ReviewBoxes, VisionError>,
     ) -> Result<BoxScan, VisionError> {
         match run() {
             Ok(scan) => {
@@ -162,46 +164,46 @@ impl Callback {
 }
 
 impl progress::Observer for Callback {
-    fn on_event(&self, event: progress::Event) {
+    fn on_event(&self, event: progress::native::Event) {
         if !self.attached.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(event) = core::Event::observation(event) {
+        if !matches!(event, progress::native::Event::Finished { .. }) {
             self.emit(event.into());
         }
     }
 }
 
-impl From<core::Event> for BoxProgressUpdate {
-    fn from(event: core::Event) -> Self {
+impl From<progress::native::Event> for BoxProgressUpdate {
+    fn from(event: progress::native::Event) -> Self {
         match event {
-            core::Event::Photo { width, height } => Self::Photo { width, height },
-            core::Event::Work {
+            progress::native::Event::Photo { width, height } => Self::Photo { width, height },
+            progress::native::Event::Work {
                 phase,
                 completed,
                 total,
             } => Self::Work {
                 phase: match phase {
-                    progress::Phase::Preparing => ScanWorkPhase::Preparing,
-                    progress::Phase::Finding => ScanWorkPhase::Finding,
-                    progress::Phase::Geometry => ScanWorkPhase::Geometry,
-                    progress::Phase::Reading => ScanWorkPhase::Reading,
-                    progress::Phase::Checking => ScanWorkPhase::Checking,
-                    progress::Phase::Packing => ScanWorkPhase::Packing,
+                    progress::native::Phase::Preparing => ScanWorkPhase::Preparing,
+                    progress::native::Phase::Finding => ScanWorkPhase::Finding,
+                    progress::native::Phase::Geometry => ScanWorkPhase::Geometry,
+                    progress::native::Phase::Reading => ScanWorkPhase::Reading,
+                    progress::native::Phase::Checking => ScanWorkPhase::Checking,
+                    progress::native::Phase::Packing => ScanWorkPhase::Packing,
                 },
                 completed,
                 total,
             },
-            core::Event::Region(region) => Self::Region {
+            progress::native::Event::Region(region) => Self::Region {
                 region: region.into(),
             },
-            core::Event::Replaced { region, parents } => Self::Replaced {
+            progress::native::Event::Replaced { region, parents } => Self::Replaced {
                 region: region.into(),
                 parents,
             },
-            core::Event::Removed { id } => Self::Removed { id },
-            core::Event::Completed(scan) => Self::Completed { scan: scan.into() },
-            core::Event::Failed => Self::Failed,
+            progress::native::Event::Removed { id } => Self::Removed { id },
+            progress::native::Event::Finished { .. } => unreachable!("box completion comes from the result"),
+            progress::native::Event::Failed => Self::Failed,
         }
     }
 }
@@ -227,18 +229,18 @@ mod tests {
         }
     }
 
-    fn scan() -> core::BoxScan {
-        core::BoxScan {
+    fn scan() -> ReviewBoxes {
+        ReviewBoxes {
             width: 100,
             height: 80,
-            boxes: vec![core::FinalBox {
+            boxes: vec![bitcoin_vision_words::review::ReviewBox {
                 id: 7,
-                quad: bitcoin_vision_words::detect::Quad([
+                quad: [
                     (1.25, 2.5),
                     (30., 1.),
                     (32., 12.),
                     (2., 13.),
-                ]),
+                ],
             }],
         }
     }
@@ -252,15 +254,15 @@ mod tests {
         })));
         let result = callback
             .complete(|| {
-                callback.on_event(progress::Event::Photo {
+                callback.on_event(progress::native::Event::Photo {
                     width: 100,
                     height: 80,
                 });
-                callback.on_event(progress::Event::Removed { id: 3 });
+                callback.on_event(progress::native::Event::Removed { id: 3 });
                 Ok(scan())
             })
             .unwrap();
-        callback.on_event(progress::Event::Removed { id: 7 });
+        callback.on_event(progress::native::Event::Removed { id: 7 });
         let events = events.lock().unwrap();
         assert_eq!(
             events.iter().map(|e| e.sequence).collect::<Vec<_>>(),
@@ -287,11 +289,11 @@ mod tests {
         })));
         let result = callback
             .complete(|| {
-                callback.on_event(progress::Event::Photo {
+                callback.on_event(progress::native::Event::Photo {
                     width: 100,
                     height: 80,
                 });
-                callback.on_event(progress::Event::Removed { id: 3 });
+                callback.on_event(progress::native::Event::Removed { id: 3 });
                 Ok(scan())
             })
             .unwrap();
@@ -314,7 +316,7 @@ mod tests {
                 }))
                 .is_err()
         );
-        callback.on_event(progress::Event::Removed { id: 3 });
+        callback.on_event(progress::native::Event::Removed { id: 3 });
         assert_eq!(events.lock().unwrap()[0].update, BoxProgressUpdate::Failed);
         assert_eq!(events.lock().unwrap().len(), 1);
     }

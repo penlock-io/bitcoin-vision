@@ -1,6 +1,6 @@
 //! Usage: cargo run --release -p bitcoin-vision-words --features bundled-models --example scan -- photo.jpg new-output-dir
 use base64::Engine as _;
-use bitcoin_vision_words::{ScanOptions, ScanResult, Scanner, decode_image};
+use bitcoin_vision_words::{ScanOptions, ScanResult, Scanner};
 use std::{error::Error, fmt::Write as _, path::PathBuf};
 
 const ACCEPTED: [u8; 3] = [0, 170, 114];
@@ -31,13 +31,6 @@ fn outline(image: &mut image::RgbImage, quad: &[(f32, f32); 4], scale: (f32, f32
     }
 }
 
-fn accepted(scan: &ScanResult, observation: usize) -> bool {
-    scan.page.words[observation]
-        .selection
-        .as_ref()
-        .is_some_and(|s| s.confirmation() == bitcoin_vision_words::hybrid::Confirmation::Accepted)
-}
-
 fn ink(color: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
 }
@@ -53,7 +46,7 @@ fn overlay(photo: &image::RgbImage, scan: &ScanResult) -> image::RgbImage {
     );
     let document = scan.document();
     for &index in &document.ordered_observations {
-        let color = if accepted(scan, index) {
+        let color = if document.observations[index].accepted {
             ACCEPTED
         } else {
             UNCERTAIN
@@ -73,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.len() != 2 {
         return Err("usage: scan PHOTO NEW_OUTPUT_DIRECTORY".into());
     }
-    let photo = decode_image(&std::fs::read(&args[0])?, None)?;
+    let photo = bitcoin_vision_core::decode_image(&std::fs::read(&args[0])?, None)?;
     let scanner = Scanner::bundled()?;
     let scan = scanner.scan_rgb(
         &photo,
@@ -87,9 +80,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Refuse an existing directory: examples must not overwrite prior evidence.
     std::fs::create_dir(&output)?;
     std::fs::create_dir(output.join("crops"))?;
-    for (i, word) in scan.page.words.iter().enumerate() {
-        word.crop
-            .save(output.join("crops").join(format!("{i}.png")))?;
+    for (i, word) in scan.review()?.words.iter().enumerate() {
+        std::fs::write(
+            output.join("crops").join(format!("{i}.png")),
+            &word.crop_png,
+        )?;
     }
     photo.save(output.join("photo.png"))?;
     preview(&photo).save(output.join("preview.png"))?;
@@ -109,7 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stroke = (photo.width() as f32 / 600.).max(1.);
     for (position, &index) in document.ordered_observations.iter().enumerate() {
         let observation = &document.observations[index];
-        let color = ink(if accepted(&scan, index) {
+        let color = ink(if observation.accepted {
             ACCEPTED
         } else {
             UNCERTAIN
@@ -165,7 +160,7 @@ fn preview_is_display_only_and_outlines_use_photo_coordinates() {
 #[test]
 fn the_readme_overlay_is_what_this_example_renders_today() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let photo = decode_image(
+    let photo = bitcoin_vision_core::decode_image(
         &std::fs::read(root.join("examples/photos/handwritten.png")).unwrap(),
         None,
     )

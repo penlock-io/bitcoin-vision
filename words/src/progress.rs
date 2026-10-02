@@ -5,7 +5,10 @@
 use crate::detect::Quad;
 
 /// An identity allocated in the stage's post-split column-order index space.
+#[cfg(feature = "research")]
 pub type RegionId = u32;
+#[cfg(not(feature = "research"))]
+pub(crate) type RegionId = u32;
 
 /// Real boundaries of one scan; an opaque stage has no invented percentage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +41,7 @@ pub enum RegionState {
 }
 
 /// A complete replaceable region snapshot in canonical full-image pixels.
+stage! {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Region {
     /// Stable for this attempt; never reused after retirement.
@@ -49,6 +53,7 @@ pub struct Region {
     /// What the region was provisionally read as, once it has been read.
     /// Later passes can still revise it; the result has the final word.
     pub reading: Option<Reading>,
+}
 }
 
 /// A region's provisional reading. This is word text: a projection that must
@@ -119,6 +124,7 @@ pub struct FinalRegion {
 }
 
 /// Ordered deltas from one synchronous native attempt, with no photo/text data.
+stage! {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// Canonical dimensions established by native decode/orientation.
@@ -159,6 +165,7 @@ pub enum Event {
     /// Native failure. The normal return value supplies the error, not this event.
     Failed,
 }
+}
 
 impl Event {
     /// Whether this ends the stream for a still-attached observer.
@@ -175,28 +182,34 @@ impl Event {
 /// not re-enter the scanner. An adapter may detach after a delivery failure
 /// without failing recognition. No observer is retained globally or in a
 /// reusable model.
+stage! {
 pub trait Observer: Send + Sync {
     /// Observe one event without changing scan computation.
     fn on_event(&self, event: Event);
+}
 }
 
 /// Lazily build an event only when an observer is present.
 ///
 /// The ordinary no-observer path performs only the option check: no vectors,
 /// geometry copies, clocks, queues or FFI calls are constructed for progress.
+stage! {
 pub fn emit(observer: Option<&dyn Observer>, event: impl FnOnce() -> Event) {
     if let Some(observer) = observer {
         observer.on_event(event());
     }
 }
+}
 
 /// Emit a truthful phase-local count, with no payload work when unobserved.
+stage! {
 pub fn work(observer: Option<&dyn Observer>, phase: Phase, completed: u32, total: Option<u32>) {
     emit(observer, || Event::Work {
         phase,
         completed,
         total,
     });
+}
 }
 
 stage! {

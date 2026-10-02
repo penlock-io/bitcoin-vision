@@ -17,7 +17,18 @@ pub enum PhotoUpSource {
     Explicit,
 }
 
-impl From<PhotoUpSource> for bitcoin_vision_words::page_frame::PhotoUp {
+impl PhotoUpSource {
+    pub(crate) fn source(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Camera => "camera",
+            Self::Exif => "exif",
+            Self::Explicit => "explicit",
+        }
+    }
+}
+
+impl From<PhotoUpSource> for bitcoin_vision_words::PhotoUp {
     fn from(value: PhotoUpSource) -> Self {
         match value {
             PhotoUpSource::Unknown => Self::Unknown,
@@ -29,16 +40,13 @@ impl From<PhotoUpSource> for bitcoin_vision_words::page_frame::PhotoUp {
 }
 
 pub(crate) fn decode(photo: &[u8], orientation: u8) -> Result<RgbImage, VisionError> {
-    let _decode = bitcoin_vision_words::timing::span("mobile.decode");
+    let _decode = crate::timing::span("mobile.decode");
     // One decoder for both pipelines, so a phone gets the same size and
     // pixel-count limits a caller of the library does. The app resolves EXIF
     // itself and hands the transform here, so the embedded value is never read
     // a second time.
-    bitcoin_vision_words::decode_image(photo, Some(orientation)).map_err(|e| VisionError::Photo {
-        detail: match e {
-            bitcoin_vision_words::ScanError::Image(detail) => detail,
-            other => other.to_string(),
-        },
+    bitcoin_vision_core::decode_image(photo, Some(orientation)).map_err(|e| VisionError::Photo {
+        detail: e.to_string(),
     })
 }
 

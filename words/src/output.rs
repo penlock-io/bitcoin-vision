@@ -34,6 +34,8 @@ pub struct Observation {
     pub quad: [(f32, f32); 4],
     /// Selected spelling; None is never substituted with a fabricated word.
     pub selected: Option<&'static str>,
+    /// Whether the native calibration accepted the selected word.
+    pub accepted: bool,
     /// Whether excluded from the suggested phrase.
     pub excluded: bool,
     /// Printed label ordinal, when supported by the native stage.
@@ -127,6 +129,7 @@ impl ScanResult {
                             .pick()
                             .and_then(|p| Word::from_index(p as u16))
                             .map(|w| w.as_str()),
+                        accepted: w.verdict() == crate::words::Verdict::Accept,
                         excluded: w.stray,
                         label_number: w.number,
                         ocr_text: w.raw.as_ref().map(|r| r.text.clone()),

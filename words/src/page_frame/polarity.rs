@@ -5,43 +5,11 @@
 use super::{AxisEvidence, Direction, PageAxis};
 use crate::phrase::DecisionTrace;
 use crate::recogniser::{LineRead, Recogniser};
+use crate::scanner::PhotoUp;
 use crate::split::{level_crop_in, upside_down};
 use crate::vocabulary::Word;
 use image::{GrayImage, RgbImage};
 use serde_json::json;
-
-/// Provenance of the canonical photo's top, separate from its pixel transform.
-/// In particular, an identity transform does not imply known photo-up. This is
-/// a caller hint, not proof that the paper itself was photographed right way up.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PhotoUp {
-    /// Legacy caller, stored raster or missing/invalid metadata.
-    #[default]
-    Unknown,
-    /// Capture-time camera metadata, including rotation zero.
-    Camera,
-    /// Valid file EXIF orientation, including orientation 1.
-    Exif,
-    /// Caller explicitly declares these canonical pixels upright.
-    Explicit,
-}
-
-impl PhotoUp {
-    /// Stable source name for diagnostics; no numeric transform is inferred.
-    pub fn source(self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::Camera => "camera",
-            Self::Exif => "exif",
-            Self::Explicit => "explicit",
-        }
-    }
-
-    /// Whether the caller supplied evidence of photo-up.
-    pub fn known(self) -> bool {
-        self != Self::Unknown
-    }
-}
 
 /// Why the page uses its base direction or the opposite polarity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

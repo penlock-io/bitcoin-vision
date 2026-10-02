@@ -19,11 +19,10 @@ use bdk_wallet::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::template::{Bip86, DescriptorTemplate};
-use bitcoin_vision_words::progress::Observer;
+use crate::progress::Observer;
 #[cfg(feature = "scan-profile")]
 use bitcoin_vision_words::recogniser::Preparation;
 use bitcoin_vision_words::scan::Outcome as ScanOutcome;
-use bitcoin_vision_words::words::Verdict;
 use bitcoin_vision_words::{ScanError, ScanOptions, ScanResult};
 use penlock::soft::search::{Bip39Checksum, Filter, Floor, Outcome, search, slots};
 use penlock::soft::{Evidence, SoftDecoded, combine, decode_soft};
@@ -40,6 +39,7 @@ mod psbt;
 mod qr;
 mod sources;
 mod strip_progress;
+mod timing;
 
 pub use boxes::{BoxObserver, BoxProgressEvent, BoxProgressUpdate, BoxScan, FinalBox};
 pub use diagnostics::{DiagnosedScan, DiagnosticFile};
@@ -766,75 +766,45 @@ pub struct WordReading {
     pub expanded_from: Vec<ExtentParent>,
 }
 
-impl TryFrom<&bitcoin_vision_words::WordBox> for WordReading {
+impl TryFrom<&bitcoin_vision_words::review::ReviewWord> for WordReading {
     type Error = VisionError;
 
-    fn try_from(w: &bitcoin_vision_words::WordBox) -> Result<Self, Self::Error> {
-        let chosen = w
-            .pick()
-            .and_then(|p| Word::from_index(p as u16))
-            .ok_or_else(|| VisionError::Scan {
+    fn try_from(w: &bitcoin_vision_words::review::ReviewWord) -> Result<Self, Self::Error> {
+        let chosen = w.selected.ok_or_else(|| VisionError::Scan {
                 detail: "word observation has no selection".into(),
             })?;
-        let _png = bitcoin_vision_words::timing::span("mobile.crop_png");
-        let mut crop_png = Vec::new();
-        w.crop
-            .write_to(
-                &mut std::io::Cursor::new(&mut crop_png),
-                image::ImageFormat::Png,
-            )
-            .map_err(|e| VisionError::Scan {
-                detail: e.to_string(),
-            })?;
-        drop(_png);
         Ok(Self {
-            corners: w.quad.0.iter().flat_map(|&(x, y)| [x, y]).collect(),
+            corners: w.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
             ranked: w
                 .ranked
                 .iter()
-                .take(5)
-                .filter_map(|&(i, p)| {
-                    Word::from_index(i as u16).map(|word| RankedWord {
-                        word: word.as_str().to_owned(),
-                        probability: p,
-                    })
+                .map(|&(word, probability)| RankedWord {
+                    word: word.to_owned(),
+                    probability,
                 })
                 .collect(),
-            accepted: w.verdict() == Verdict::Accept,
-            read: chosen.as_str().to_owned(),
-            raw: w.raw.as_ref().map_or(String::new(), |r| r.text.clone()),
+            accepted: w.accepted,
+            read: chosen.to_owned(),
+            raw: w.raw.clone().unwrap_or_default(),
             original_ocr: w
-                .evidence
                 .original
                 .as_ref()
-                .map(|r| {
-                    let mut crop_png = Vec::new();
-                    r.crop
-                        .write_to(
-                            &mut std::io::Cursor::new(&mut crop_png),
-                            image::ImageFormat::Png,
-                        )
-                        .map_err(|e| VisionError::Scan {
-                            detail: e.to_string(),
-                        })?;
-                    Ok::<_, VisionError>(OcrObservation {
-                        corners: r.quad.0.iter().flat_map(|&(x, y)| [x, y]).collect(),
-                        crop_png,
-                        raw: r.raw.text.clone(),
-                    })
+                .map(|r| OcrObservation {
+                    corners: r.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
+                    crop_png: r.crop_png.clone(),
+                    raw: r.raw.clone(),
                 })
-                .transpose()?,
-            matching: w.evidence.matching.as_ref().map(|m| MatchingEvidence {
+                ,
+            matching: w.matching.as_ref().map(|m| MatchingEvidence {
                 text: m.text.clone(),
                 original: m.original,
-                removed_prefix_bytes: m.removed_prefix_bytes as u32,
+                removed_prefix_bytes: m.removed_prefix_bytes,
             }),
             labels: w
-                .evidence
                 .labels
                 .iter()
                 .map(|l| LabelObservation {
-                    corners: l.corners.iter().flat_map(|&(x, y)| [x, y]).collect(),
+                    corners: l.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
                     literal: l.literal.clone(),
                     origin: l.origin.clone(),
                     ordinal: l.ordinal,
@@ -842,22 +812,17 @@ impl TryFrom<&bitcoin_vision_words::WordBox> for WordReading {
                     ambiguous: l.ambiguous,
                 })
                 .collect(),
-            label_conflict: w.evidence.conflict,
+            label_conflict: w.label_conflict,
             stray: w.stray,
             number: w.number,
             apart: w.apart,
-            crop_png,
-            joined_from: w
-                .joined_from
-                .into_iter()
-                .flatten()
-                .map(|i| i as u32)
-                .collect(),
+            crop_png: w.crop_png.clone(),
+            joined_from: w.joined_from.clone(),
             expanded_from: w
                 .expanded_from
                 .iter()
                 .map(|p| ExtentParent {
-                    word_index: p.word_index as u32,
+                    word_index: p.word_index,
                     stray: p.stray,
                 })
                 .collect(),
@@ -914,12 +879,13 @@ pub enum InitialOrder {
     Columns,
 }
 
-impl From<bitcoin_vision_words::InitialOrder> for InitialOrder {
-    fn from(value: bitcoin_vision_words::InitialOrder) -> Self {
+impl InitialOrder {
+    fn from_name(value: &str) -> Self {
         match value {
-            bitcoin_vision_words::InitialOrder::Numbers => Self::Numbers,
-            bitcoin_vision_words::InitialOrder::Rows => Self::Rows,
-            bitcoin_vision_words::InitialOrder::Columns => Self::Columns,
+            "numbers" => Self::Numbers,
+            "rows" => Self::Rows,
+            "columns" => Self::Columns,
+            _ => unreachable!("the scanner has three traversal names"),
         }
     }
 }
@@ -1044,7 +1010,7 @@ impl PhraseScanner {
         recogniser: Vec<u8>,
         dictionary: String,
     ) -> Result<Self, VisionError> {
-        let _init = bitcoin_vision_words::timing::span("mobile.init");
+        let _init = timing::span("mobile.init");
         Self::build(
             detector,
             model,
@@ -1139,8 +1105,8 @@ impl PhraseScanner {
         let mut files = Vec::new();
         let scan = progress::complete(Some(&observer), || {
             let read = self.scan_page(photo, orientation, options, Some(&observer))?;
-            let result = pack_scan(read.found, &read.page)?;
-            files = diagnostics::pack(&read.page, &result, &read.regions, orientation, photo_up)?;
+            let result = pack_scan(&read)?;
+            files = diagnostics::pack(&read, orientation, photo_up)?;
             Ok((result, read.regions))
         })?;
         Ok(DiagnosedScan { scan, files })
@@ -1172,15 +1138,16 @@ impl PhraseScanner {
         orientation: u8,
         callback: Option<Box<dyn BoxObserver>>,
     ) -> Result<BoxScan, VisionError> {
-        let _total = bitcoin_vision_words::timing::span("mobile.total");
+        let _total = timing::span("mobile.total");
         let observer = boxes::Callback::new(callback);
         observer.complete(|| {
             // Some(observer) keeps the stage-owned ID mapping even without a
             // foreign callback. It neither selects boxes nor retains readings.
             let read =
                 self.scan_page(photo, orientation, ScanOptions::default(), Some(&observer))?;
-            bitcoin_vision_words::boxes::BoxScan::from_page(&read.page, &read.regions)
-                .map_err(|detail| VisionError::Scan { detail })
+            read.selected_boxes().map_err(|error| VisionError::Scan {
+                detail: error.to_string(),
+            })
         })
     }
 
@@ -1192,7 +1159,7 @@ impl PhraseScanner {
         photo: Vec<u8>,
         use_extent: bool,
     ) -> Result<(PhraseScan, String), VisionError> {
-        let _total = bitcoin_vision_words::timing::span("mobile.total");
+        let _total = timing::span("mobile.total");
         let read = self.scan_extent(
             photo,
             use_extent,
@@ -1203,11 +1170,11 @@ impl PhraseScanner {
             .as_ref()
             .map(|r| {
                 let value = r.to_json();
-                let _serialize = bitcoin_vision_words::timing::span("phrase.extent.serialize");
+                let _serialize = timing::span("phrase.extent.serialize");
                 value.to_string()
             })
             .unwrap_or_default();
-        Ok((pack_scan(read.found, &read.page)?, report))
+        Ok((pack_scan(&read)?, report))
     }
 
     /// Same lean E3 arm as normal scans, retaining its compact report for the
@@ -1218,10 +1185,10 @@ impl PhraseScanner {
         photo: Vec<u8>,
         use_extent: bool,
     ) -> Result<(PhraseScan, Option<bitcoin_vision_words::extent::Report>), VisionError> {
-        let _total = bitcoin_vision_words::timing::span("mobile.total");
+        let _total = timing::span("mobile.total");
         let read =
             self.scan_extent(photo, use_extent, bitcoin_vision_words::extent::Audit::None)?;
-        let scan = pack_scan(read.found, &read.page)?;
+        let scan = pack_scan(&read)?;
         let report = read
             .extent
             .map(|r| std::sync::Arc::try_unwrap(r).expect("the result is the report's only owner"));
@@ -1235,14 +1202,14 @@ impl PhraseScanner {
         photo_up: PhotoUpSource,
         observer: Option<&dyn Observer>,
     ) -> Result<PhraseScan, VisionError> {
-        let _total = bitcoin_vision_words::timing::span("mobile.total");
+        let _total = timing::span("mobile.total");
         let options = ScanOptions {
             photo_up: photo_up.into(),
             ..ScanOptions::default()
         };
         progress::complete(observer, || {
             let read = self.scan_page(photo, orientation, options, observer)?;
-            Ok((pack_scan(read.found, &read.page)?, read.regions))
+            Ok((pack_scan(&read)?, read.regions))
         })
     }
 
@@ -1257,9 +1224,9 @@ impl PhraseScanner {
         options: ScanOptions,
         observer: Option<&dyn Observer>,
     ) -> Result<ScanResult, VisionError> {
-        bitcoin_vision_words::progress::work(
+        progress::native::work(
             observer,
-            bitcoin_vision_words::progress::Phase::Preparing,
+            progress::native::Phase::Preparing,
             0,
             None,
         );
@@ -1307,62 +1274,55 @@ impl PhraseScanner {
     }
 }
 
-fn pack_scan(
-    found: bitcoin_vision_words::Found,
-    scan: &bitcoin_vision_words::PageScan,
-) -> Result<PhraseScan, VisionError> {
-    let layout = match found {
+fn pack_scan(scan: &ScanResult) -> Result<PhraseScan, VisionError> {
+    let review = scan.review().map_err(|error| VisionError::Scan {
+        detail: error.to_string(),
+    })?;
+    let layout = match review.found {
         bitcoin_vision_words::Found::Page => Layout::Page,
         bitcoin_vision_words::Found::Sheet => Layout::WordSheet,
     };
-    let _pack = bitcoin_vision_words::timing::span("mobile.pack_result");
-    let mut words = Vec::with_capacity(scan.words.len());
-    for w in &scan.words {
+    let _pack = timing::span("mobile.pack_result");
+    let mut words = Vec::with_capacity(review.words.len());
+    for w in &review.words {
         words.push(WordReading::try_from(w)?);
     }
-    // The stage owns the policy; all orders retain strays for restoration.
-    let initial = scan.initial_traversal();
-    let columns: Vec<usize> = (0..scan.words.len()).collect();
-    let rows = scan.by_rows();
-    let numbered = scan.by_numbers();
-    let numbering = match &scan.numbering {
-        bitcoin_vision_words::numbering::Numbering::None => Numbering::None,
-        bitcoin_vision_words::numbering::Numbering::Held {
+    let numbering = match &review.numbering {
+        bitcoin_vision_words::review::ReviewNumbering::None => Numbering::None,
+        bitcoin_vision_words::review::ReviewNumbering::Held {
             count,
             missing,
             out_of_place,
             unresolved,
-            ..
         } => Numbering::Held {
             count: *count,
             missing: missing.clone(),
             out_of_place: out_of_place.clone(),
-            unresolved: unresolved.iter().map(|&i| i as u32).collect(),
+            unresolved: unresolved.clone(),
         },
-        bitcoin_vision_words::numbering::Numbering::Inconsistent { detail } => {
+        bitcoin_vision_words::review::ReviewNumbering::Inconsistent { detail } => {
             Numbering::Inconsistent {
                 detail: detail.clone(),
             }
         }
     };
     Ok(PhraseScan {
-        list_numbered: scan.list_mode()
-            == bitcoin_vision_words::numbering::dotted::ListMode::Numbered,
+        list_numbered: review.list_numbered,
         layout,
-        width: scan.width,
-        height: scan.height,
-        columns_pass: initial.columns_pass,
-        rows_pass: initial.rows_pass,
-        numbered_pass: initial.numbered_pass,
-        initial_order: initial.order.into(),
-        order_requires_review: initial.requires_review,
-        order_basis: initial.basis.to_owned(),
-        columns: columns.iter().map(|&i| i as u32).collect(),
-        rows: rows.iter().map(|&i| i as u32).collect(),
-        numbered: numbered.iter().map(|&i| i as u32).collect(),
+        width: review.width,
+        height: review.height,
+        columns_pass: review.columns_pass,
+        rows_pass: review.rows_pass,
+        numbered_pass: review.numbered_pass,
+        initial_order: InitialOrder::from_name(review.initial_order),
+        order_requires_review: review.order_requires_review,
+        order_basis: review.order_basis.to_owned(),
+        columns: review.columns,
+        rows: review.rows,
+        numbered: review.numbered,
         numbering,
         words,
-        sources: sources::pack(&scan.sources),
+        sources: sources::pack(&review.sources),
     })
 }
 
@@ -1373,7 +1333,7 @@ fn pack_scan(
 #[cfg(feature = "scan-profile")]
 #[uniffi::export]
 pub fn take_scan_profile() -> String {
-    bitcoin_vision_words::timing::take().to_string()
+    timing::take().to_string()
 }
 
 fn parse_words(words: &[String]) -> Result<Vec<Word>, VisionError> {
@@ -1453,6 +1413,25 @@ mod phrase_tests {
     use penlock::share::parse_words as parse_rows;
     use penlock::{Share, ShareIndex};
 
+    fn pack_native_word(word: &bitcoin_vision_words::WordBox) -> WordReading {
+        let scan = ScanResult {
+            found: bitcoin_vision_words::Found::Page,
+            page: bitcoin_vision_words::PageScan {
+                page_direction: None,
+                width: 100,
+                height: 100,
+                words: vec![word.clone()],
+                numbering: bitcoin_vision_words::numbering::Numbering::None,
+                join_trials: Vec::new(),
+                sources: Vec::new(),
+            },
+            regions: Vec::new(),
+            #[cfg(feature = "extent-experiment")]
+            extent: None,
+        };
+        WordReading::try_from(&scan.review().unwrap().words[0]).unwrap()
+    }
+
     #[test]
     fn extent_provenance_and_original_read_material_survive_mobile_packing() {
         use bitcoin_vision_words::{ExtentParent as Parent, WordBox};
@@ -1506,7 +1485,7 @@ mod phrase_tests {
                     stray: true,
                 });
             }
-            let packed = WordReading::try_from(&word).unwrap();
+            let packed = pack_native_word(&word);
             assert!(!packed.accepted && !packed.stray);
             assert!(packed.joined_from.is_empty());
             assert_eq!(packed.expanded_from.len(), if pair { 2 } else { 1 });
@@ -1550,7 +1529,7 @@ mod phrase_tests {
             basis: "label_track_cell_and_word_ink",
         });
         word.number = Some(6);
-        let cell = WordReading::try_from(&word).unwrap();
+        let cell = pack_native_word(&word);
         assert_eq!(cell.number, Some(6));
         assert!(!cell.stray && !cell.accepted);
         assert!(cell.joined_from.is_empty() && cell.expanded_from.is_empty());
@@ -1564,7 +1543,7 @@ mod phrase_tests {
         word.evidence.cell = None;
         word.number = None;
         word.joined_from = Some([0, 2]);
-        let packed = WordReading::try_from(&word).unwrap();
+        let packed = pack_native_word(&word);
         assert_eq!(packed.joined_from, vec![0, 2]);
         assert!(packed.expanded_from.is_empty());
 
@@ -1597,7 +1576,7 @@ mod phrase_tests {
             dotted: true,
             ambiguous: false,
         });
-        let packed = WordReading::try_from(&word).unwrap();
+        let packed = pack_native_word(&word);
         assert_eq!(packed.raw, ". Hobby");
         let original = packed.original_ocr.unwrap();
         assert_eq!(original.raw, "9.Hobby");
@@ -1628,7 +1607,7 @@ mod phrase_tests {
     fn app_profile_export_drains_only_numeric_thread_samples() {
         take_scan_profile();
         {
-            let _span = bitcoin_vision_words::timing::span("mobile.init");
+            let _span = timing::span("mobile.init");
         }
         let report: serde_json::Value = serde_json::from_str(&take_scan_profile()).unwrap();
         assert_eq!(report["spans"][0]["name"], "mobile.init");

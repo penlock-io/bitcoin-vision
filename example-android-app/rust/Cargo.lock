@@ -323,6 +323,7 @@ name = "bitcoin-vision-mobile"
 version = "0.1.0"
 dependencies = [
  "bdk_wallet",
+ "bitcoin-vision-core",
  "bitcoin-vision-words",
  "crc",
  "image",

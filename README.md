@@ -176,7 +176,7 @@ nothing; a null score is an unscored candidate, not a zero.
 ## Coordinates and decisions
 
 Polygons refer to the canonical image after EXIF orientation is applied once,
-and `decode_image` hands back that same frame for display. The final polygon is
+and `bitcoin_vision_core::decode_image` hands back that same frame for display. The final polygon is
 the crop both models read, with no added padding. Every classifier candidate is
 retained, `probability` is a model probability and `hybrid_score` is not one,
 and checksum validity never selects a reading order. `document()` projects

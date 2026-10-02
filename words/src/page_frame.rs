@@ -10,7 +10,11 @@ use crate::detect::Quad;
 use crate::split::{Frame, frame_of, turn};
 
 mod polarity;
-pub use polarity::{PageDirection, PhotoUp, PolarityReason};
+#[cfg(feature = "research")]
+pub use crate::scanner::PhotoUp;
+#[cfg(not(feature = "research"))]
+pub(crate) use crate::scanner::PhotoUp;
+pub use polarity::{PageDirection, PolarityReason};
 
 /// Explicit geometry context. Local frames remain only for the registered-field
 /// and historical geometry APIs; generic scans supply one shared direction.

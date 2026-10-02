@@ -1,7 +1,6 @@
 //! Geometry-only detector provenance. Unread ink is never a WordReading.
 
-use bitcoin_vision_words::fragments::{Decision, Ownership};
-use bitcoin_vision_words::sources::{Outcome, RawSource};
+use bitcoin_vision_words::review::ReviewSource;
 
 /// One original split part, whether or not it was eligible for reading.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -65,76 +64,43 @@ pub struct DetectionSource {
     pub union: Option<DetectionUnion>,
 }
 
-fn corners(q: &bitcoin_vision_words::detect::Quad) -> Vec<f32> {
-    q.0.iter().flat_map(|&(x, y)| [x, y]).collect()
+fn corners(quad: &[(f32, f32); 4]) -> Vec<f32> {
+    quad.iter().flat_map(|&(x, y)| [x, y]).collect()
 }
 
-pub(crate) fn pack(sources: &[RawSource]) -> Vec<DetectionSource> {
+pub(crate) fn pack(sources: &[ReviewSource]) -> Vec<DetectionSource> {
     sources
         .iter()
         .map(|source| {
-            let decision = source.decision.as_ref();
-            let (empty_reason, recovered_word) = match source.outcome {
-                Outcome::Parts(_) => (None, None),
-                Outcome::Empty(reason) => (Some(reason.as_str().to_owned()), None),
-                Outcome::Rescued { reason, word_index } => {
-                    (Some(reason.as_str().to_owned()), Some(word_index as u32))
-                }
-            };
             DetectionSource {
-                detector_id: source.detector as u32,
+                detector_id: source.detector_id,
                 corners: corners(&source.quad),
                 parts: source
-                    .parts()
+                    .parts
                     .iter()
                     .map(|p| DetectionPart {
-                        part: p.part as u32,
+                        part: p.part,
                         corners: corners(&p.quad),
-                        word_index: p.word_index.map(|i| i as u32),
+                        word_index: p.word_index,
                     })
                     .collect(),
-                empty_reason,
-                recovered_word,
-                decision: decision.map(|d| d.reason().to_owned()),
-                local_height: decision.and_then(Decision::scale).map(|s| s.height),
-                support_ids: decision
-                    .and_then(Decision::scale)
-                    .map(|s| {
-                        s.supports
-                            .iter()
-                            .map(|&i| sources[i].detector as u32)
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                owner: decision.and_then(Decision::owner).map(|o| DetectionOwner {
-                    detector_id: sources[o.source].detector as u32,
-                    part: o.part.map(|p| p as u32),
-                    word_index: o.word_index(sources).map(|i| i as u32),
+                empty_reason: source.empty_reason.clone(),
+                recovered_word: source.recovered_word,
+                decision: source.decision.clone(),
+                local_height: source.local_height,
+                support_ids: source.support_ids.clone(),
+                owner: source.owner.as_ref().map(|owner| DetectionOwner {
+                    detector_id: owner.detector_id,
+                    part: owner.part,
+                    word_index: owner.word_index,
                 }),
-                union: match decision {
-                    Some(Decision::Tiny {
-                        ownership:
-                            Ownership::Ending {
-                                union, footprint, ..
-                            },
-                        ..
-                    }) => Some(DetectionUnion {
-                        corners: corners(union),
-                        read_footprint: corners(footprint),
-                        word_index: source
-                            .union
-                            .as_ref()
-                            .and_then(|u| u.word_index)
-                            .map(|i| i as u32),
-                        selected: source.union.as_ref().is_some_and(|u| u.selected),
-                        reason: source
-                            .union
-                            .as_ref()
-                            .map_or("not_read", |u| u.reason)
-                            .to_owned(),
-                    }),
-                    _ => None,
-                },
+                union: source.union.as_ref().map(|union| DetectionUnion {
+                    corners: corners(&union.quad),
+                    read_footprint: corners(&union.read_footprint),
+                    word_index: union.word_index,
+                    selected: union.selected,
+                    reason: union.reason.clone(),
+                }),
             }
         })
         .collect()
@@ -143,53 +109,50 @@ pub(crate) fn pack(sources: &[RawSource]) -> Vec<DetectionSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision_words::detect::Quad;
-    use bitcoin_vision_words::fragments::{Observation, Scale};
-    use bitcoin_vision_words::sources::EmptySplit;
-    use bitcoin_vision_words::sources::{Part, Union};
+    use bitcoin_vision_words::review::{ReviewOwner, ReviewPart, ReviewUnion};
 
     #[test]
     fn geometry_only_and_rescued_sources_keep_distinct_links_through_packing() {
-        let parent = Quad([(10., 20.), (70., 20.), (70., 40.), (10., 40.)]);
-        let tiny = Quad([(71., 25.), (75., 25.), (75., 30.), (71., 30.)]);
-        let union = Quad([(10., 20.), (75., 20.), (75., 40.), (10., 40.)]);
+        let parent = [(10., 20.), (70., 20.), (70., 40.), (10., 40.)];
+        let tiny = [(71., 25.), (75., 25.), (75., 30.), (71., 30.)];
+        let union = [(10., 20.), (75., 20.), (75., 40.), (10., 40.)];
         let sources = vec![
-            RawSource {
-                detector: 8,
-                quad: parent.clone(),
-                outcome: Outcome::Rescued {
-                    reason: EmptySplit::NoInkAfterRules,
-                    word_index: 3,
-                },
+            ReviewSource {
+                detector_id: 8,
+                quad: parent,
+                parts: Vec::new(),
+                empty_reason: Some("no_ink_after_rules".into()),
+                recovered_word: Some(3),
                 decision: None,
+                local_height: None,
+                support_ids: Vec::new(),
+                owner: None,
                 union: None,
             },
-            RawSource {
-                detector: 12,
-                quad: tiny.clone(),
-                outcome: Outcome::Parts(vec![Part {
+            ReviewSource {
+                detector_id: 12,
+                quad: tiny,
+                parts: vec![ReviewPart {
                     part: 2,
-                    quad: tiny.clone(),
+                    quad: tiny,
                     word_index: None,
-                }]),
-                decision: Some(Decision::Tiny {
-                    scale: Scale {
-                        height: 20.,
-                        supports: vec![0],
-                    },
-                    ownership: Ownership::Ending {
-                        owner: Observation {
-                            source: 0,
-                            part: None,
-                        },
-                        union: union.clone(),
-                        footprint: union.clone(),
-                    },
+                }],
+                empty_reason: None,
+                recovered_word: None,
+                decision: Some("tiny".into()),
+                local_height: Some(20.),
+                support_ids: vec![8],
+                owner: Some(ReviewOwner {
+                    detector_id: 8,
+                    part: None,
+                    word_index: Some(3),
                 }),
-                union: Some(Union {
+                union: Some(ReviewUnion {
+                    quad: union,
+                    read_footprint: union,
                     word_index: Some(4),
                     selected: false,
-                    reason: "uncertain",
+                    reason: "uncertain".into(),
                 }),
             },
         ];

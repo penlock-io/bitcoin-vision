@@ -1,10 +1,57 @@
 //! Per-call UniFFI adapter for the plain scan observer.
 
-use bitcoin_vision_words::progress as core;
 use std::sync::Mutex;
 // Outside a diagnostic build only the tests still count with an atomic.
 #[cfg(any(test, feature = "scan-profile"))]
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// App delivery events over the scanner's retained record. They are not
+/// another public callback API on the word scanner itself.
+pub(crate) mod native {
+    pub use bitcoin_vision_words::progress::{FinalRegion, Phase, Reading, RegionState};
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Region {
+        pub id: u32,
+        pub quad: [(f32, f32); 4],
+        pub state: RegionState,
+        pub reading: Option<Reading>,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Event {
+        Photo { width: u32, height: u32 },
+        Work { phase: Phase, completed: u32, total: Option<u32> },
+        Region(Region),
+        Replaced { region: Region, parents: Vec<u32> },
+        Removed { id: u32 },
+        Finished { regions: Vec<FinalRegion> },
+        Failed,
+    }
+
+    impl Event {
+        pub fn is_terminal(&self) -> bool {
+            matches!(self, Self::Finished { .. } | Self::Failed)
+        }
+    }
+
+    pub trait Observer: Send + Sync {
+        fn on_event(&self, event: Event);
+    }
+
+    pub fn emit(observer: Option<&dyn Observer>, event: impl FnOnce() -> Event) {
+        if let Some(observer) = observer {
+            observer.on_event(event());
+        }
+    }
+
+    pub fn work(observer: Option<&dyn Observer>, phase: Phase, completed: u32, total: Option<u32>) {
+        emit(observer, || Event::Work { phase, completed, total });
+    }
+}
+
+use native as core;
+pub(crate) use native::Observer;
 
 /// Real stage boundaries, not predicted fractions of elapsed time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -352,7 +399,6 @@ impl From<core::Region> for ScanRegion {
             id: region.id,
             corners: region
                 .quad
-                .0
                 .into_iter()
                 .flat_map(|(x, y)| [x, y])
                 .collect(),
@@ -435,10 +481,7 @@ impl ProgressCallbackProbe {
     /// Emit synthetic geometry, wait for release, then emit completion.
     /// Returns whether released before the timeout, not recognition success.
     pub fn run(&self, observer: Box<dyn ScanProgressObserver>) -> bool {
-        use bitcoin_vision_words::detect::Quad;
-        use bitcoin_vision_words::progress::{
-            Event, FinalRegion, Observer, Phase, Region, RegionState,
-        };
+        use core::{Event, FinalRegion, Observer, Phase, Region, RegionState};
         if self.used.swap(true, Ordering::Relaxed) {
             return false;
         }
@@ -454,7 +497,7 @@ impl ProgressCallbackProbe {
         });
         let mut region = Region {
             id: 0,
-            quad: Quad([(10., 20.), (110., 20.), (110., 50.), (10., 50.)]),
+            quad: [(10., 20.), (110., 20.), (110., 50.), (10., 50.)],
             state: RegionState::Reading,
             reading: None,
         };
@@ -492,7 +535,7 @@ impl ProgressCallbackProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision_words::progress::Observer;
+    use super::native::Observer;
     use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
     use std::time::Duration;
@@ -887,7 +930,7 @@ mod tests {
     fn revisions_keep_geometry_and_parent_ids_in_one_update() {
         let region = core::Region {
             id: 12,
-            quad: bitcoin_vision_words::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
+            quad: [(1., 2.), (8., 2.), (8., 6.), (1., 6.)],
             state: core::RegionState::Read,
             reading: None,
         };
@@ -927,7 +970,7 @@ mod tests {
     fn a_region_crosses_to_the_phone_without_its_reading() {
         let region = core::Region {
             id: 3,
-            quad: bitcoin_vision_words::detect::Quad([(1., 2.), (8., 2.), (8., 6.), (1., 6.)]),
+            quad: [(1., 2.), (8., 2.), (8., 6.), (1., 6.)],
             state: core::RegionState::Read,
             reading: Some(bitcoin_vision_words::progress::Reading {
                 candidates: vec![(0, 0.97)],

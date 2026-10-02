@@ -22,6 +22,14 @@ making its implementation stage a module in the public namespace.
 | Words | `Word` root re-export, `homography`/`runtime` re-exports | Vocabulary only through result data or research; core utilities through `bitcoin-vision-core`, not scanner root |
 | Words | `Scanner::from_models`, `Scanner::recogniser` | Model construction via `Scanner::new`; stage injection research-only; profile via opt-in scanner method |
 
-The Penlock rows above are implemented. BIP39's old stage data is still used
-by the Android review/diagnostic adapter; its privacy rows are the remaining
-part of this plan, not a claim that the facade alone has hidden them.
+Both scanners now use the same boundary: ordinary callers load a `Scanner`,
+start or run a scan, and consume the finished result. BIP39 review, selected
+box, and diagnostic-file projections are immutable views of that result; the
+Android adapter uses these projections instead of constructing detector,
+layout, or reader stages. Penlock similarly exposes finished strip-review data
+without publishing its locator and cell-processing modules.
+
+`research` deliberately reopens the native stages for corpus experiments,
+and `scan-profile` exposes timing-specific BIP39 hooks. Those are opt-in
+surfaces, not part of either scanner's normal public API. The external-use and
+compile-fail tests in each scanner crate guard this distinction.

@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use bitcoin_vision_core::scan::{Cursor, Delta, Outcome, Snapshot};
 use bitcoin_vision_words::progress::{Phase, RegionState};
-use bitcoin_vision_words::{Found, Layout, ScanOptions, Scanner, Words, decode_image};
+use bitcoin_vision_words::{Found, Layout, ScanOptions, Scanner, Words};
 
 fn photo() -> image::RgbImage {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/photos/handwritten.png");
-    decode_image(&std::fs::read(path).unwrap(), None).unwrap()
+    bitcoin_vision_core::decode_image(&std::fs::read(path).unwrap(), None).unwrap()
 }
 
 fn page() -> ScanOptions {
@@ -139,10 +139,10 @@ fn the_one_call_scan_is_the_machine_run_to_the_end() {
     };
     let called = scanner.scan_rgb(&photo(), page()).unwrap();
     let words = |r: &bitcoin_vision_words::ScanResult| {
-        r.page
-            .words
+        r.document()
+            .observations
             .iter()
-            .map(|w| (w.quad.clone(), w.pick()))
+            .map(|w| (w.quad, w.selected))
             .collect::<Vec<_>>()
     };
     assert_eq!(words(&driven), words(&called));
