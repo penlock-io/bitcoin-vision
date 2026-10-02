@@ -632,6 +632,23 @@ mod strip_review_tests {
     }
 
     #[test]
+    fn invalid_edit_is_rejected_and_a_corrected_cell_rechecks_the_pair() {
+        let (a, b) = pair();
+        let original = a.review().rows[0].cells[2].selected.clone().unwrap();
+        assert!(a.with_cell(0, 2, "!".into()).is_err());
+        assert!(a.with_cell(12, 2, "A".into()).is_err());
+        let wrong = if original == "=" { "#" } else { "=" };
+        let edited = a.with_cell(0, 2, wrong.into()).unwrap();
+        let changed = review_combined_strips(edited.clone(), b.clone()).unwrap();
+        assert_eq!(changed.rows[0].status, CombinedRowStatus::Corrected);
+        assert!(changed.rows[1..].iter().all(|row| row.status == CombinedRowStatus::Exact));
+        let restored = edited.with_cell(0, 2, original).unwrap();
+        let checked = review_combined_strips(restored.clone(), b.clone()).unwrap();
+        assert!(checked.rows.iter().all(|row| row.status == CombinedRowStatus::Exact));
+        assert_eq!(recover(restored, b).unwrap().len(), 12);
+    }
+
+    #[test]
     fn unread_cell_stays_visible_as_original_evidence_after_a_override() {
         let (a, _) = pair();
         let mut missing = (*a).share.clone();

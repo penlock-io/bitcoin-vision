@@ -245,9 +245,15 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
 
     /// Takes a share into the wizard. True when the second share
     /// completed it and the phrase is recovered.
-    fun use(strip: StripReading): Boolean {
+    fun use(strip: StripReading, paperChecked: Boolean = false): Boolean {
         val scanning = scan as? StripScan.Scanning ?: return false
         val effective = reviewedStrip ?: strip
+        // A queued tap from the previous composition must not authorize a
+        // newly edited strip with an acknowledgement for its old reading.
+        if (effective !== strip) {
+            editError = "The strip changed. Review the latest reading before using it."
+            return false
+        }
         val held = scanning.held
         if (held == null) {
             heldPhoto = attempts.resolvedPhoto
@@ -256,6 +262,12 @@ class StripsViewModel(app: Application) : AndroidViewModel(app) {
             reading?.cancel()
             scan = StripScan.Scanning(effective)
             reviewedStrip = null
+            return false
+        }
+        val pair = combinedReview(effective)
+        if (!shareUseAllowed(firstShareHeld = true, pair = pair, paperChecked = paperChecked)) {
+            editError = if (pair == null) "The shares cannot be combined. Review or retake them."
+                else "Check every corrected or uncertain row against both paper strips first."
             return false
         }
         val first = shareNumber(held) ?: return false

@@ -30,16 +30,21 @@ entitled to be sure of. A per-word checksum catches a hand's slip on recovery.
 <p align="center">
   <img src="docs/images/penlock-scan.gif" width="330"
        alt="The example app reading two Penlock share strips through the
-            camera: each is photographed, read, and confirmed, and the two
-            together load a key">
+            camera: the second share's row 8 cell 2 is corrected from V to U,
+            the combined check updates, paper review is acknowledged, and the
+            two shares load a key without revealing the phrase">
 </p>
 
 Those are two of the real shares this project's test data was written on — by
 hand, on upstream's original worksheet, cut and photographed on a table — put
 in front of an emulator's camera. It plays faster than real time, as the other
 animation does, because how long an emulator takes over a photograph is not
-what is being shown. The recovered phrase never appears: two shares in, a key
-fingerprint and which strips made it out.
+what is being shown. The recogniser reads V in share 2's row 8, cell 2; the
+person checks the paper and changes it to U. The combined check then reports
+an exact match for that row. Other uncertain rows still require checking both
+paper strips and ticking the acknowledgement before `Use share 2` is enabled.
+The recovered phrase never appears: two shares in, a key fingerprint and
+which strips made it out.
 
 The implementation is `penlock-scan` (photograph to symbols) and `penlock` (the
 arithmetic, and the wheel the paper version is). Both are plain Rust crates in this repository.

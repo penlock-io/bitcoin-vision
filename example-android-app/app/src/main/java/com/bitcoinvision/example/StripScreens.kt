@@ -122,12 +122,15 @@ private fun CaptureResult(viewModel: StripsViewModel, capture: Capture, onRecove
     var cellEdit by remember(raw) { mutableStateOf<Pair<Int, StripCellReview>?>(null) }
     var rowEdit by remember(raw) { mutableStateOf<Int?>(null) }
     var acknowledged by remember(next) { mutableStateOf(false) }
-    val pairState by produceState<Pair<CombinedStripReview?, Boolean>?>(null, held, next) {
+    // A newly edited strip must never inherit the previous strip's completed
+    // pair check while the new check is still running.
+    val pairState by produceState<Pair<StripReading, CombinedStripReview?>?>(null, held, next) {
         value = if (held != null && next != null) withContext(Dispatchers.Default) {
-            Pair(viewModel.combinedReview(next), true)
+            Pair(next, viewModel.combinedReview(next))
         } else null
     }
-    val pair = pairState?.first
+    val currentPairState = pairState?.takeIf { it.first === next }
+    val pair = currentPairState?.second
     val flagged = pair?.rows?.any { it.status != CombinedRowStatus.EXACT } == true
     val retake = { viewModel.retake() }
     BackHandler(onBack = retake)
@@ -137,8 +140,8 @@ private fun CaptureResult(viewModel: StripsViewModel, capture: Capture, onRecove
         actions = {
             if (next != null) {
                 Button(
-                    onClick = { if (viewModel.use(next)) onRecovered() },
-                    enabled = held == null || (pair != null && (!flagged || acknowledged)),
+                    onClick = { if (viewModel.use(next, acknowledged)) onRecovered() },
+                    enabled = shareUseAllowed(held != null, pair, acknowledged),
                     modifier = Modifier.fillMaxWidth().testTag("use"),
                 ) { Text("Use share ${viewModel.shareNumber(next)}") }
                 TextButton(onClick = retake, modifier = Modifier.fillMaxWidth().testTag("retake")) { Text("Retake") }
@@ -213,7 +216,7 @@ private fun CaptureResult(viewModel: StripsViewModel, capture: Capture, onRecove
                         Text("First share on its photo", style = MaterialTheme.typography.bodyMedium)
                         StripPhoto(firstPhoto, held.review())
                     }
-                    if (pairState == null) Text("Checking combined rows…")
+                    if (currentPairState == null) Text("Checking combined rows…")
                     else if (pair == null) Text("The shares cannot be combined. Review unclear cells or retake.")
                     pair?.rows?.forEach { row ->
                         Text("Row ${row.number} · " + when (row.status) {
