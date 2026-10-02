@@ -41,8 +41,6 @@ pub mod extent;
 ))]
 mod extent;
 pub mod fragments;
-/// Re-exported from `bitcoin-vision-core`, which both pipelines depend on.
-pub use bitcoin_vision_core::homography;
 /// How a caller follows a scan: the record [`Scanner::start`] hands back.
 pub use bitcoin_vision_core::scan;
 pub mod hybrid;
@@ -72,8 +70,7 @@ pub mod region;
 #[cfg(not(feature = "research"))]
 mod region;
 mod repair;
-#[doc(hidden)]
-pub use bitcoin_vision_core::runtime;
+pub(crate) use bitcoin_vision_core::runtime;
 #[cfg(feature = "scan-profile")]
 pub use repair::set_read_workers;
 pub mod sources;
@@ -88,7 +85,6 @@ pub mod wordsheet;
 
 pub mod output;
 mod scanner;
-pub use image;
 pub use joins::{JoinRead, JoinTrial};
 pub use layout::PageLayout;
 pub use phrase::{

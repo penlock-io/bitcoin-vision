@@ -19,10 +19,38 @@ pub struct ScannedShare {
     /// `(word_index, position)`.
     pub unread: Vec<(usize, usize)>,
     /// Where the strip was in the photo.
+    #[cfg(feature = "research")]
     pub located: Located,
+    #[cfg(not(feature = "research"))]
+    located: Located,
 }
 
 impl ScannedShare {
+    /// The strip's four fiducial centres in canonical photo pixels.
+    pub fn quad(&self) -> [(f64, f64); 4] {
+        self.located.frame.fiducials
+    }
+
+    /// The four corners of one cell's review window in canonical photo
+    /// pixels, clockwise. This is the evidence the scanner used to locate the
+    /// reading, not a request to run its cell-cutting stage again.
+    pub fn cell_quad(&self, row: usize, position: usize) -> [(f64, f64); 4] {
+        let rect = crate::cells::cell_window(
+            self.located.layout,
+            row,
+            position,
+            crate::cells::Window::Grown,
+        );
+        let frame = &self.located.frame;
+        [
+            (rect.x, rect.y),
+            (rect.x + rect.w, rect.y),
+            (rect.x + rect.w, rect.y + rect.h),
+            (rect.x, rect.y + rect.h),
+        ]
+        .map(|(x, y)| frame.to_photo(x, y))
+    }
+
     /// The most probable symbol in every cell.
     pub fn symbols(&self) -> Vec<[Symbol; WORD_LEN]> {
         self.cells

@@ -94,6 +94,7 @@ impl Scanner {
     }
 
     /// A scanner over an already-built model, for callers with their own.
+    #[cfg(feature = "research")]
     pub fn from_model(model: Box<dyn Model + Send + Sync>) -> Self {
         Self { model }
     }
@@ -200,7 +201,16 @@ pub struct StripRegion {
     pub identity: Identity,
     /// All cell probabilities, once read. `None` means location is known but
     /// inference has not completed.
-    pub reading: Option<crate::model::CellReadings>,
+    pub reading: Option<Reading>,
+}
+
+/// Cell evidence retained in a progress region after classification.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reading {
+    /// One distribution per cell, grouped by worksheet row.
+    pub cells: Vec<[Distribution; WORD_LEN]>,
+    /// Cells with no usable classifier output.
+    pub unread: Vec<(usize, usize)>,
 }
 
 /// The strip pipeline's implementation of the common scan protocol.
@@ -312,9 +322,9 @@ impl Scan<'_> {
             emit.push(Delta::Region {
                 id: id as u32,
                 region: StripRegion {
-                    quad: share.located.frame.fiducials,
+                    quad: share.quad(),
                     identity: share.identity,
-                    reading: Some(crate::model::CellReadings {
+                    reading: Some(Reading {
                         cells: share.cells.clone(),
                         unread: share.unread.clone(),
                     }),
@@ -457,7 +467,7 @@ fn observation(share: &ScannedShare, diagnostics: bool) -> Observation {
             Identity::Unknown => "unknown",
         },
         share: share.identity.share().map(ShareIndex::number),
-        quad: share.located.frame.fiducials,
+        quad: share.quad(),
         confidence: share.confidence(),
         text: share
             .cells

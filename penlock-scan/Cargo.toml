@@ -22,6 +22,8 @@ serde_json = "1"
 
 [features]
 default = []
+# Low-level locator, classifier and worksheet stages for the research harness.
+research = []
 # The worksheets as PDFs for printing; the phone reads and never prints.
 print = ["bitcoin-vision-forms/print"]
 onnx = ["dep:tract-onnx", "bitcoin-vision-core/onnx"]
@@ -30,4 +32,8 @@ bundled-models = ["onnx"]
 
 [[example]]
 name = "scan"
-required-features = ["bundled-models"]
+required-features = ["bundled-models", "print"]
+
+[[test]]
+name = "scanner"
+required-features = ["research", "print"]

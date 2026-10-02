@@ -1,15 +1,16 @@
-//! Usage: cargo run --release -p penlock-scan --features bundled-models --example scan -- [photo.jpg]
+//! Usage: cargo run --release -p penlock-scan --features bundled-models,print --example scan -- [photo.jpg]
 //!
 //! With a photograph, reads every Penlock strip in it and prints what each
 //! cell says. Without one, splits the phrase below into three shares, draws
 //! shares 1 and 3 on worksheet strips, reads both strips back and recovers
 //! the phrase from the two readings: the whole round trip, nothing private
 //! needed.
+use bitcoin_vision_forms::Font;
 use penlock::backup::{ShareCount, recover, split};
 use penlock::share::{Share, ShareIndex};
 use penlock::word::{Word, symbols_from_str};
 use penlock_scan::sheet::{Fill, StripKind, cut_strip, front_png};
-use penlock_scan::{Document, Font, ScanOptions, Scanner};
+use penlock_scan::{Document, ScanOptions, Scanner};
 use rand::SeedableRng;
 
 /// The BIP39 test vector every wallet library carries: no one's backup.

@@ -12,6 +12,7 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 bdk_wallet = { version = "3.1.0", features = ["keys-bip39"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx"] }
 penlock = { path = "../../../penlock", features = ["wallet"] }
 penlock-scan = { path = "../../../penlock-scan", default-features = false, features = ["onnx"] }
@@ -40,4 +41,4 @@ required-features = ["bindgen"]
 # Test fixtures build a selection and a page direction the way a scan
 # would, through stages the shipped API does not expose.
 bitcoin-vision-words = { path = "../../../words", default-features = false, features = ["onnx", "research"] }
-penlock-scan = { path = "../../../penlock-scan", default-features = false, features = ["onnx", "print"] }
+penlock-scan = { path = "../../../penlock-scan", default-features = false, features = ["onnx", "print", "research"] }

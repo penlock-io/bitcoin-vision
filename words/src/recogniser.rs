@@ -691,6 +691,21 @@ impl Recogniser {
     }
 
     /// Always fails: the `onnx` feature is off.
+    pub fn from_bytes_with_preparation(
+        _model: &[u8],
+        _dictionary: &str,
+        _preparation: Preparation,
+    ) -> Result<Recogniser, String> {
+        Err("bitcoin-vision-words was built without the onnx feature".into())
+    }
+
+    /// Always fails: the `onnx` feature is off.
+    #[cfg(feature = "scan-profile")]
+    pub fn profile_blank_width(&self, _width: u32) -> Result<(), String> {
+        Err("bitcoin-vision-words was built without the onnx feature".into())
+    }
+
+    /// Always fails: the `onnx` feature is off.
     pub fn load(
         _model: &std::path::Path,
         _dictionary: &std::path::Path,

@@ -1,7 +1,7 @@
 //! One explicit orientation after decoding; never interpret EXIF a second time.
 
 use crate::VisionError;
-use bitcoin_vision_words::image::{ImageFormat, RgbImage, imageops};
+use image::{ImageFormat, RgbImage, imageops};
 
 /// Caller provenance for the top of the canonical photo, not another transform.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
@@ -92,7 +92,6 @@ pub fn canonical_photo(photo: Vec<u8>, orientation: u8) -> Result<Vec<u8>, Visio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_vision_words::image;
 
     fn marker() -> RgbImage {
         RgbImage::from_fn(3, 2, |x, y| image::Rgb([(1 + y * 3 + x) as u8, 0, 0]))

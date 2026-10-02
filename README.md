@@ -71,7 +71,7 @@ worksheet strips, reads both drawings back and recovers the phrase from what
 it read; given a photograph, it prints every strip it finds:
 
 ```sh
-cargo run --release -p penlock-scan --features bundled-models --example scan -- [photo.jpg]
+cargo run --release -p penlock-scan --features bundled-models,print --example scan -- [photo.jpg]
 ```
 
 ## BIP39 word lists
@@ -106,6 +106,9 @@ download or network service. The repository is
 `https://github.com/penlock-io/llscan`. The approximately 24.7 MB model
 set makes a small crates.io package a separate distribution decision, not
 something achieved by hiding the models at runtime.
+
+The [public API inventory](docs/public-api-inventory.md) tracks the scanner
+surface separately from the research and worksheet-printing features.
 
 ```rust,no_run
 use bitcoin_vision::words::{Scanner, ScanOptions};
@@ -216,7 +219,7 @@ own licenses and notices.
 ```sh
 cargo test --locked --workspace --all-features
 cargo test --locked -p bitcoin-vision-words --features bundled-models --example scan
-cargo test --locked -p penlock-scan --features bundled-models --example scan
+cargo test --locked -p penlock-scan --features bundled-models,print --example scan
 cargo check --locked --no-default-features
 cargo doc --locked --no-deps --features bundled-models
 ```

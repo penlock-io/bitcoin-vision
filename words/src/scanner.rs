@@ -111,14 +111,19 @@ impl Scanner {
             dictionary: include_str!("../models/text-recogniser.dict.txt"),
         })
     }
-    /// The text recogniser this scanner reads with.
-    pub fn recogniser(&self) -> &Recogniser {
-        &self.recogniser
+
+    /// Prepare one synthetic crop for the opt-in timing harness.
+    #[cfg(feature = "scan-profile")]
+    pub fn profile_blank_ocr(&self, width: u32) -> Result<(), ScanError> {
+        self.recogniser
+            .profile_blank_width(width)
+            .map_err(ScanError::Model)
     }
 
     /// A scanner over models the caller already built, for a caller that
     /// loads them its own way: the phone prepares its recogniser for its
     /// hardware, the research harness picks its own files.
+    #[cfg(feature = "research")]
     pub fn from_models(detector: Detector, reader: Reader, recogniser: Recogniser) -> Self {
         Self {
             detector,
@@ -129,12 +134,32 @@ impl Scanner {
 
     /// Loads the complete model set, validating the classifier calibration.
     pub fn new(models: ModelBytes<'_>) -> Result<Self, ScanError> {
+        Self::load(models, crate::recogniser::Preparation::default())
+    }
+
+    /// Opt-in comparison of recogniser preparation, without exposing its stage.
+    #[cfg(feature = "scan-profile")]
+    pub fn new_with_preparation(
+        models: ModelBytes<'_>,
+        preparation: crate::recogniser::Preparation,
+    ) -> Result<Self, ScanError> {
+        Self::load(models, preparation)
+    }
+
+    fn load(
+        models: ModelBytes<'_>,
+        preparation: crate::recogniser::Preparation,
+    ) -> Result<Self, ScanError> {
         Ok(Self {
             detector: Detector::from_bytes(models.detector).map_err(ScanError::Model)?,
             reader: Reader::from_bytes(models.classifier, models.calibration)
                 .map_err(ScanError::Model)?,
-            recogniser: Recogniser::from_bytes(models.recogniser, models.dictionary)
-                .map_err(ScanError::Model)?,
+            recogniser: Recogniser::from_bytes_with_preparation(
+                models.recogniser,
+                models.dictionary,
+                preparation,
+            )
+            .map_err(ScanError::Model)?,
         })
     }
 

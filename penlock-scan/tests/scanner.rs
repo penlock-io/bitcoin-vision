@@ -6,9 +6,10 @@
 //! are the library's rather than each pipeline's own.
 use penlock::word::WORD_LEN;
 use penlock::{Distribution, Symbol};
+use penlock_scan::cells::CellImage;
 use penlock_scan::model::{CellReadings, Model, ModelError};
 use penlock_scan::scan::{Cursor, Delta, Outcome};
-use penlock_scan::{CellImage, ScanOptions, Scanner};
+use penlock_scan::{ScanOptions, Scanner};
 
 /// What the pipeline promises a caller holds whatever is behind the cells, so
 /// these run on every build rather than only where a backend is compiled in.

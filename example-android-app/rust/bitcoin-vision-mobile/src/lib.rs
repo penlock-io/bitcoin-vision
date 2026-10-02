@@ -19,10 +19,9 @@ use bdk_wallet::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::template::{Bip86, DescriptorTemplate};
-use bitcoin_vision_words::Reader;
-use bitcoin_vision_words::detect::Detector;
 use bitcoin_vision_words::progress::Observer;
-use bitcoin_vision_words::recogniser::{Preparation, Recogniser};
+#[cfg(feature = "scan-profile")]
+use bitcoin_vision_words::recogniser::Preparation;
 use bitcoin_vision_words::scan::Outcome as ScanOutcome;
 use bitcoin_vision_words::words::Verdict;
 use bitcoin_vision_words::{ScanError, ScanOptions, ScanResult};
@@ -334,12 +333,11 @@ impl StripReading {
 
     /// Immutable classifier evidence, explicit edits and native crop windows.
     pub fn review(&self) -> StripReview {
-        use penlock_scan::cells::{Window, cell_window};
-        let frame = &self.original.located.frame;
+        let fiducials = self.original.quad();
         let corners = [0usize, 1, 3, 2]
             .into_iter()
             .flat_map(|i| {
-                let (x, y) = frame.fiducials[i];
+                let (x, y) = fiducials[i];
                 [x as f32, y as f32]
             })
             .collect();
@@ -356,19 +354,9 @@ impl StripReading {
                     .map(|(position, distribution)| {
                         let unread = self.original.unread.contains(&(row, position));
                         let best = distribution.argmax();
-                        let rect =
-                            cell_window(self.original.located.layout, row, position, Window::Grown);
-                        let corners = [
-                            (rect.x, rect.y),
-                            (rect.x + rect.w, rect.y),
-                            (rect.x + rect.w, rect.y + rect.h),
-                            (rect.x, rect.y + rect.h),
-                        ]
+                        let corners = self.original.cell_quad(row, position)
                         .into_iter()
-                        .flat_map(|(x, y)| {
-                            let (x, y) = frame.to_photo(x, y);
-                            [x as f32, y as f32]
-                        })
+                        .flat_map(|(x, y)| [x as f32, y as f32])
                         .collect();
                         StripCellReview {
                             position: position as u32,
@@ -541,7 +529,7 @@ mod strip_review_tests {
     fn pair() -> (Arc<StripReading>, Arc<StripReading>) {
         let sheet = front_png(None, 110.0).unwrap();
         let strip =
-            penlock_scan::image::DynamicImage::ImageRgb8(cut_strip(&sheet, 110.0, 1)).to_luma8();
+            image::DynamicImage::ImageRgb8(cut_strip(&sheet, 110.0, 1)).to_luma8();
         let found = find_strip(&strip).unwrap();
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let words = Word::parse_phrase(phrase).unwrap();
@@ -793,7 +781,7 @@ impl TryFrom<&bitcoin_vision_words::WordBox> for WordReading {
         w.crop
             .write_to(
                 &mut std::io::Cursor::new(&mut crop_png),
-                bitcoin_vision_words::image::ImageFormat::Png,
+                image::ImageFormat::Png,
             )
             .map_err(|e| VisionError::Scan {
                 detail: e.to_string(),
@@ -824,7 +812,7 @@ impl TryFrom<&bitcoin_vision_words::WordBox> for WordReading {
                     r.crop
                         .write_to(
                             &mut std::io::Cursor::new(&mut crop_png),
-                            bitcoin_vision_words::image::ImageFormat::Png,
+                            image::ImageFormat::Png,
                         )
                         .map_err(|e| VisionError::Scan {
                             detail: e.to_string(),
@@ -986,9 +974,10 @@ impl PhraseScanner {
     #[cfg(feature = "scan-profile")]
     pub fn profile_blank_ocr(&self, width: u32) -> Result<(), VisionError> {
         self.scanner
-            .recogniser()
-            .profile_blank_width(width)
-            .map_err(|detail| VisionError::Model { detail })
+            .profile_blank_ocr(width)
+            .map_err(|error| VisionError::Model {
+                detail: error.to_string(),
+            })
     }
 
     fn build(
@@ -997,16 +986,18 @@ impl PhraseScanner {
         calibration: String,
         recogniser: Vec<u8>,
         dictionary: String,
-        preparation: Preparation,
     ) -> Result<Self, VisionError> {
-        let model_error = |detail| VisionError::Model { detail };
         Ok(PhraseScanner {
-            scanner: bitcoin_vision_words::Scanner::from_models(
-                Detector::from_bytes(&detector).map_err(model_error)?,
-                Reader::from_bytes(&model, &calibration).map_err(model_error)?,
-                Recogniser::from_bytes_with_preparation(&recogniser, &dictionary, preparation)
-                    .map_err(model_error)?,
-            ),
+            scanner: bitcoin_vision_words::Scanner::new(bitcoin_vision_words::ModelBytes {
+                detector: &detector,
+                classifier: &model,
+                calibration: &calibration,
+                recogniser: &recogniser,
+                dictionary: &dictionary,
+            })
+            .map_err(|error| VisionError::Model {
+                detail: error.to_string(),
+            })?,
         })
     }
 
@@ -1021,14 +1012,21 @@ impl PhraseScanner {
         dictionary: String,
         preparation: Preparation,
     ) -> Result<Self, VisionError> {
-        Self::build(
-            detector,
-            model,
-            calibration,
-            recogniser,
-            dictionary,
-            preparation,
-        )
+        Ok(Self {
+            scanner: bitcoin_vision_words::Scanner::new_with_preparation(
+                bitcoin_vision_words::ModelBytes {
+                    detector: &detector,
+                    classifier: &model,
+                    calibration: &calibration,
+                    recogniser: &recogniser,
+                    dictionary: &dictionary,
+                },
+                preparation,
+            )
+            .map_err(|error| VisionError::Model {
+                detail: error.to_string(),
+            })?,
+        })
     }
 }
 
@@ -1053,7 +1051,6 @@ impl PhraseScanner {
             calibration,
             recogniser,
             dictionary,
-            Preparation::Symbolic,
         )
     }
 
@@ -1466,7 +1463,7 @@ mod phrase_tests {
                 (30., 40.),
                 (10., 40.),
             ]),
-            crop: bitcoin_vision_words::image::GrayImage::from_raw(
+            crop: image::GrayImage::from_raw(
                 2,
                 3,
                 vec![0, 10, 20, 30, 40, 255],
@@ -1534,7 +1531,7 @@ mod phrase_tests {
             assert_eq!(packed.ranked[0].probability, 0.7);
             assert_eq!(packed.corners, vec![10., 20., 30., 20., 30., 40., 10., 40.]);
             assert_eq!(
-                bitcoin_vision_words::image::load_from_memory(&packed.crop_png)
+                image::load_from_memory(&packed.crop_png)
                     .unwrap()
                     .to_luma8(),
                 word.crop
@@ -1559,7 +1556,7 @@ mod phrase_tests {
         assert!(cell.joined_from.is_empty() && cell.expanded_from.is_empty());
         assert_eq!(cell.corners, vec![10., 20., 30., 20., 30., 40., 10., 40.]);
         assert_eq!(
-            bitcoin_vision_words::image::load_from_memory(&cell.crop_png)
+            image::load_from_memory(&cell.crop_png)
                 .unwrap()
                 .to_luma8(),
             word.crop
@@ -1581,7 +1578,7 @@ mod phrase_tests {
                 (30., 40.),
                 (0., 40.),
             ]),
-            crop: bitcoin_vision_words::image::GrayImage::new(4, 3),
+            crop: image::GrayImage::new(4, 3),
             raw: bitcoin_vision_words::recogniser::LineRead {
                 text: "9.Hobby".into(),
                 confidence: 0.8,
@@ -1607,13 +1604,13 @@ mod phrase_tests {
         assert_eq!(original.corners[0], 0.);
         assert_eq!(packed.corners[0], 10.);
         assert_eq!(
-            bitcoin_vision_words::image::load_from_memory(&original.crop_png)
+            image::load_from_memory(&original.crop_png)
                 .unwrap()
                 .width(),
             4
         );
         assert_eq!(
-            bitcoin_vision_words::image::load_from_memory(&packed.crop_png)
+            image::load_from_memory(&packed.crop_png)
                 .unwrap()
                 .width(),
             2

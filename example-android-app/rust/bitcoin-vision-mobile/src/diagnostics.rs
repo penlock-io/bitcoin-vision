@@ -116,7 +116,7 @@ mod tests {
                 (50., 40.),
                 (10., 40.),
             ]),
-            crop: bitcoin_vision_words::image::GrayImage::from_raw(
+            crop: image::GrayImage::from_raw(
                 2,
                 3,
                 vec![0, 20, 40, 60, 80, 255],
@@ -262,7 +262,7 @@ mod tests {
             "camera"
         );
         assert_eq!(
-            bitcoin_vision_words::image::load_from_memory(&traced.words[0].crop_png)
+            image::load_from_memory(&traced.words[0].crop_png)
                 .unwrap()
                 .to_luma8(),
             scan.words[0].crop
@@ -312,7 +312,7 @@ mod tests {
         scan.page_direction = Some(
             bitcoin_vision_words::page_frame::PageAxis::from_detections(&[])
                 .resolve(
-                    &bitcoin_vision_words::image::RgbImage::new(0, 0),
+                    &image::RgbImage::new(0, 0),
                     bitcoin_vision_words::page_frame::PhotoUp::Unknown,
                     None,
                     0.15,

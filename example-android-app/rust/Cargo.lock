@@ -325,6 +325,7 @@ dependencies = [
  "bdk_wallet",
  "bitcoin-vision-words",
  "crc",
+ "image",
  "minicbor",
  "penlock",
  "penlock-scan",
