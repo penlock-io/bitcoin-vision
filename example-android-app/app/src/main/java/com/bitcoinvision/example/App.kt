@@ -197,7 +197,6 @@ fun App(
         composable("sign/pick") {
             SignPickScreen(
                 wallets,
-                onScanQr = { nav.navigate("sign/scan") },
                 onReviewed = { reviewIncoming() },
                 onBack = { nav.popBackStack() },
             )
