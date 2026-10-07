@@ -94,7 +94,7 @@ fun ConnectWalletScreen(wallets: WalletsViewModel, id: String, onBack: () -> Uni
     }
 }
 
-/** Addresses derived per step as the list nears its end. */
+/** Addresses derived per step as the list nears its end. Numbered from 0, as Sparrow numbers them. */
 private const val ADDRESS_STEP = 20u
 
 /**
@@ -142,7 +142,7 @@ fun ReceiveScreen(wallets: WalletsViewModel, id: String, onBack: () -> Unit) {
                 ListItem(
                     leadingContent = {
                         Text(
-                            "${i + 1}",
+                            "$i",
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.widthIn(min = 32.dp),
                         )
@@ -161,10 +161,10 @@ fun ReceiveScreen(wallets: WalletsViewModel, id: String, onBack: () -> Unit) {
         val address = addresses[index]
         AlertDialog(
             onDismissRequest = { shown = null },
-            title = { Text("Address ${index + 1}") },
+            title = { Text("Address $index") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StaticQr(address, "Address ${index + 1} as a QR code", "address-qr", Modifier.fillMaxWidth())
+                    StaticQr(address, "Address $index as a QR code", "address-qr", Modifier.fillMaxWidth())
                     SelectionContainer {
                         Text(
                             address,
@@ -217,28 +217,27 @@ fun KeyControlsScreen(
             if (wallets.revealed == id) wallets.revealed = null
         }
     }
-    WalletPage("Key controls", onBack) {
+    WalletPage("Secret words", onBack) {
         Text(wallet.name, style = MaterialTheme.typography.titleLarge)
-        Text(wallet.fingerprint, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PlexMono))
         Text(
-            if (key == null) "Key not loaded" else "Key loaded",
+            if (key == null) "Scan your words to send" else "Ready to send",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.testTag("key-status"),
         )
         if (key == null) {
             Button(onClick = onLoadKey, modifier = Modifier.fillMaxWidth().testTag("load-controls-key")) {
-                Text("Load key")
+                Text("Scan your words")
             }
         } else {
             Text(key.source.description(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (wallets.needsBackupWarning(id)) {
-                Text("No paper backup yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Not backed up on paper yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val shown = wallets.revealed == id
             OutlinedButton(
                 onClick = { wallets.revealed = if (shown) null else id },
                 modifier = Modifier.fillMaxWidth().testTag("show-phrase"),
-            ) { Text(if (shown) "Hide the phrase" else "Show the phrase") }
+            ) { Text(if (shown) "Hide my 12 words" else "Show my 12 words") }
             if (shown) {
                 Text("Keep the screen private.", style = MaterialTheme.typography.labelLarge)
                 PhraseBody(key.words)
@@ -246,7 +245,7 @@ fun KeyControlsScreen(
             TextButton(
                 onClick = { if (wallets.needsBackupWarning(id)) confirmUnload = true else wallets.unload(id) },
                 modifier = Modifier.fillMaxWidth().testTag("unload"),
-            ) { Text("Unload the key") }
+            ) { Text("Forget words now") }
         }
     }
     if (confirmUnload) {

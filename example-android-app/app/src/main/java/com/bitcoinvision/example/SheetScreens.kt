@@ -100,10 +100,13 @@ private val Uncertain = Color(0xFF808080)
 private val LeftOut = Color(0xFFB0B2B6)
 private val LowConfidence = Color(0xFF808080)
 
+/** Below this the review marks a word with a warning sign, since grey alone cannot. */
+internal const val UNSURE_BELOW = 0.85f
+
 /** One palette for row confidence and the corresponding polygon on the photo. */
 internal fun confidenceColour(entry: Entry): Color = when {
     entry.modelConfidence == null -> LeftOut
-    entry.modelConfidence!! >= 0.85f -> Accepted
+    entry.modelConfidence!! >= UNSURE_BELOW -> Accepted
     entry.modelConfidence!! >= 0.5f -> Uncertain
     else -> LowConfidence
 }
@@ -747,7 +750,7 @@ internal fun WordRow(
                     modifier = Modifier.weight(1f).testTag("row-$number-word"),
                 )
                 Text(
-                    confidence?.let { "${(it * 100).toInt()}%" } ?: "?",
+                    confidence?.let { "${if (it < UNSURE_BELOW) "⚠️ " else ""}${(it * 100).toInt()}%" } ?: "?",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = confidenceColour(entry),

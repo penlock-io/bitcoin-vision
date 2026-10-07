@@ -58,8 +58,8 @@ fun WalletsScreen(wallets: WalletsViewModel, onAdd: () -> Unit, onOpen: (String)
                         headlineContent = { Text(wallet.name) },
                         supportingContent = {
                             Text(
-                                "${wallet.fingerprint} · ${if (loaded) "key loaded" else "key not loaded"}",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PlexMono),
+                                if (loaded) "Ready to send" else "Words not scanned",
+                                style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.testTag("wallet-$i-status"),
                             )
                         },

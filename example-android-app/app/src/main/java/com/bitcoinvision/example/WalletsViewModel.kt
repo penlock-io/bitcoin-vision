@@ -135,7 +135,8 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
         pendingName = null
         if (existing != null) {
             keys[existing.id] = LoadedKey(words, source)
-            notice = Notice(existing.id, "Already here as ${existing.name}. Its key is loaded.", refusal = false)
+            val kept = if (chosen != null && chosen != existing.name) ", so it keeps that name" else ""
+            notice = Notice(existing.id, "This wallet is already here as ${existing.name}$kept. Its key is loaded.", refusal = false)
             return existing.id
         }
         val record = WalletRecord(
@@ -168,8 +169,8 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
         if (derived.descriptor != wallet.descriptor) {
             notice = Notice(
                 id,
-                "That is not this wallet's key: its fingerprint is ${derived.fingerprint}, " +
-                    "this wallet's is ${wallet.fingerprint}.",
+                "Those words are for a different wallet (fingerprint ${derived.fingerprint}, " +
+                    "this one is ${wallet.fingerprint}).",
                 refusal = true,
             )
             return false

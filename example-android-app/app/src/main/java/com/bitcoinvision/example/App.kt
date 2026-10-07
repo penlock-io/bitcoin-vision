@@ -249,7 +249,7 @@ fun App(
             val task = entry.task()
             ReviewScreen(
                 sheet,
-                action = if (purpose == ADD) "Add wallet" else "Load key",
+                action = if (purpose == ADD) "Add wallet" else "Use these words",
                 onAccept = {
                     sheet.confirmed()?.let { accept(purpose, task, it, KeySource.WrittenPhrase) }
                 },

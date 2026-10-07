@@ -51,7 +51,7 @@ private fun BackupStage(stage: Int) {
 fun EndedBackupScreen(onDone: () -> Unit) {
     BackHandler(onBack = onDone)
     TaskPage(
-        title = "Penlock backup",
+        title = "Share strips",
         onBack = onDone,
         actions = {
             Button(onClick = onDone, modifier = Modifier.fillMaxWidth().testTag("return-ended-backup")) {
@@ -88,7 +88,7 @@ fun SharesScreen(wallets: WalletsViewModel, onCheck: () -> Unit, onDone: () -> U
     val exit = { confirmExit = true }
     BackHandler(onBack = exit)
     TaskPage(
-        title = "Penlock backup",
+        title = "Share strips",
         onBack = exit,
         actions = {
             if (pager.currentPage < shares.lastIndex) {

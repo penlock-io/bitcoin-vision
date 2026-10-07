@@ -6,6 +6,8 @@ import android.util.Base64
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -69,6 +71,13 @@ fun SignPickScreen(
         uri?.let { context.contentResolver.openInputStream(it)?.use { s -> s.readBytes() } }?.let(take)
     }
     QrScanScreen("Show Sparrow's QR code", onPsbt = take, onExit = onBack) {
+        Text(
+            "First make the transaction in Sparrow, then scan its QR code.",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.background(CameraScrim).padding(horizontal = 12.dp, vertical = 8.dp)
+                .testTag("send-hint"),
+        )
         Button(
             onClick = { picker.launch(arrayOf("*/*")) },
             modifier = Modifier.fillMaxWidth().testTag("choose-file"),
@@ -154,13 +163,13 @@ fun ReviewPsbtScreen(
                     ) { Text("Sign transaction") }
                 } else {
                     Text(
-                        "Load the key, then sign.",
+                        "Scan your words, then sign.",
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("key-missing"),
                     )
                     Button(
                         onClick = { onLoadKey(signing.walletId) },
                         modifier = Modifier.fillMaxWidth().testTag("load-key"),
-                    ) { Text("Load key") }
+                    ) { Text("Scan your words") }
                 }
                 TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth().testTag("dismiss")) {
                     Text("Dismiss transaction")

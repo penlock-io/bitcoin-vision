@@ -86,9 +86,12 @@ fun WalletLink(
     tag: String,
     onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
+    /** One short line under the title saying what the row is for. */
+    supporting: String? = null,
 ) {
     ListItem(
         headlineContent = { Text(title) },
+        supportingContent = supporting?.let { { Text(it) } },
         trailingContent = {
             if (trailing != null) trailing()
             else Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)

@@ -65,9 +65,9 @@ fun prettyDate(iso: String): String =
 /** The one button under the key card, and where it goes. */
 enum class Primary(val label: String, val tag: String) {
     Review("Review transaction", "review-waiting"),
-    BackUp("Back up this wallet", "back-up"),
+    BackUp("Make share strips", "back-up"),
     Sign("Send", "sign-transaction"),
-    Scan("Scan phrase", "load-wallet-key"),
+    Scan("Scan your words", "load-wallet-key"),
 }
 
 /** Pending review outranks everything; a fresh key asks to be backed up; then sign or scan. */
@@ -85,7 +85,7 @@ fun KeySource.provenance(): String = when (this) {
 }
 
 fun backupLabel(checked: String?): String =
-    checked?.let { "Backup checked ${prettyDate(it)}" } ?: "Backup not checked"
+    checked?.let { "Strips checked ${prettyDate(it)}" } ?: "No strips yet"
 
 /** A swipe counts only when the card has travelled almost its whole width. */
 const val UNLOAD_TRAVEL = 0.9f
@@ -101,7 +101,10 @@ fun unloadRequested(offset: Float, width: Int, loaded: Boolean): Boolean =
 private fun SwipeToDismissBoxState.travel(): Float = runCatching { requireOffset() }.getOrDefault(0f)
 
 /** The wallet page's only fixed explanatory line; the rest is state and refusals. */
-const val BACKUP_WARNING_LINE = "Only on this phone until it is backed up."
+/** What share strips are, wherever the wallet page offers them. */
+const val STRIPS_LINE = "Split your words into 3 strips: any 2 bring your wallet back."
+
+const val BACKUP_WARNING_LINE = "Share strips keep your wallet safe even if one paper is lost."
 
 @Composable
 fun WalletScreen(
@@ -157,7 +160,6 @@ fun WalletScreen(
         },
     ) {
         KeyCard(
-            fingerprint = wallet.fingerprint,
             key = key,
             onUnload = requestUnload,
         )
@@ -207,9 +209,10 @@ fun WalletScreen(
         Card(Modifier.animateContentSize(Motion.state())) {
             if (primary != Primary.BackUp) {
                 WalletLink(
-                    "Back up on paper",
+                    "Make share strips",
                     tag = "back-up",
                     onClick = onBackUp,
+                    supporting = STRIPS_LINE,
                     trailing = {
                         Text(
                             backupLabel(wallet.penlockBackup),
@@ -224,7 +227,7 @@ fun WalletScreen(
                 WalletLink("Receive", tag = "receive", onClick = onReceive)
             }
             WalletLink("Connect to Sparrow", tag = "connect", onClick = onConnect)
-            WalletLink("Key controls", tag = "key-controls", onClick = onKeys)
+            WalletLink("Secret words", tag = "key-controls", onClick = onKeys)
         }
         if (primary == Primary.BackUp) {
             // The row is gone while the button carries the action; the status still has a home.
@@ -278,7 +281,7 @@ fun WalletScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) {
+private fun KeyCard(key: LoadedKey?, onUnload: () -> Unit) {
     val loaded = key != null
     // The dismiss state remembers its confirm lambda across recompositions, so it reads through
     // these rather than capturing a stale key or callback.
@@ -318,7 +321,7 @@ private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) 
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Unload", style = MaterialTheme.typography.labelLarge)
+                Text("Forget words", style = MaterialTheme.typography.labelLarge)
             }
         },
         modifier = Modifier
@@ -326,7 +329,7 @@ private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) 
             .onSizeChanged { width = it.width }
             .testTag("key-card")
             .semantics {
-                if (loaded) customActions = listOf(CustomAccessibilityAction("Unload key") { onUnload(); true })
+                if (loaded) customActions = listOf(CustomAccessibilityAction("Forget words") { onUnload(); true })
             },
     ) {
         Card(colors = CardDefaults.cardColors(containerColor = container)) {
@@ -344,17 +347,11 @@ private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) 
                             ),
                         )
                         Text(
-                            if (current != null) "Key loaded" else "Key not loaded",
+                            if (current != null) "Ready to send" else "Scan your words to send",
                             style = MaterialTheme.typography.headlineSmall.copy(fontFamily = PlexMono),
                             modifier = Modifier.testTag("key-status"),
                         )
                     }
-                    Text(
-                        fingerprint,
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = PlexMono),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("fingerprint"),
-                    )
                     if (current != null) {
                         Text(
                             current.source.provenance(),
@@ -367,7 +364,7 @@ private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) 
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                "swipe to unload",
+                                "swipe to forget words",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -383,13 +380,13 @@ private fun KeyCard(fingerprint: String, key: LoadedKey?, onUnload: () -> Unit) 
 fun UnloadWarningDialog(onKeep: () -> Unit, onUnload: () -> Unit) {
     AlertDialog(
         onDismissRequest = onKeep,
-        title = { Text("Unload a key with no paper backup?") },
-        text = { Text("You will need a backup you can recover from to load it again.") },
+        title = { Text("Forget your words before backing up?") },
+        text = { Text("To send again, you will need your words on paper.") },
         confirmButton = {
-            TextButton(onClick = onUnload, modifier = Modifier.testTag("confirm-unload")) { Text("Unload key") }
+            TextButton(onClick = onUnload, modifier = Modifier.testTag("confirm-unload")) { Text("Forget words") }
         },
         dismissButton = {
-            TextButton(onClick = onKeep, modifier = Modifier.testTag("cancel-unload")) { Text("Keep key loaded") }
+            TextButton(onClick = onKeep, modifier = Modifier.testTag("cancel-unload")) { Text("Keep them") }
         },
     )
 }

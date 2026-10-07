@@ -16,10 +16,10 @@ class WalletPageTest {
 
     @Test
     fun the_unloaded_primary_is_the_camera_under_the_old_load_tag() {
-        assertEquals("Scan phrase", Primary.Scan.label)
+        assertEquals("Scan your words", Primary.Scan.label)
         assertEquals("load-wallet-key", Primary.Scan.tag)
         assertEquals("Send", Primary.Sign.label)
-        assertEquals("Back up this wallet", Primary.BackUp.label)
+        assertEquals("Make share strips", Primary.BackUp.label)
         assertEquals("Review transaction", Primary.Review.label)
     }
 
@@ -28,13 +28,13 @@ class WalletPageTest {
         assertEquals("from written phrase", KeySource.WrittenPhrase.provenance())
         assertEquals("from strips 1 and 3", KeySource.Strips(3u, 1u).provenance())
         assertEquals("made on this phone", KeySource.New.provenance())
-        assertEquals("Backup not checked", backupLabel(null))
-        assertEquals("Backup checked 3 Sep 2026", backupLabel("2026-09-03"))
+        assertEquals("No strips yet", backupLabel(null))
+        assertEquals("Strips checked 3 Sep 2026", backupLabel("2026-09-03"))
     }
 
     @Test
     fun every_fixed_line_on_the_wallet_pages_is_at_most_one_sentence() {
-        val lines = listOf(BACKUP_WARNING_LINE, SAFETY_LINE) + Primary.entries.map { it.label } +
+        val lines = listOf(BACKUP_WARNING_LINE, STRIPS_LINE, SAFETY_LINE) + Primary.entries.map { it.label } +
             listOf(backupLabel(null), KeySource.New.provenance())
         for (line in lines) {
             val sentences = line.trim().trimEnd('.').split(". ").size
