@@ -76,6 +76,8 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var signing by mutableStateOf<Signing?>(null)
         private set
+    /** The name chosen before adding, for the next wallet saved; null keeps the numbered one. */
+    private var pendingName: String? = null
 
     fun wallet(id: String): WalletRecord? = wallets.firstOrNull { it.id == id }
 
@@ -88,6 +90,14 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
         store.save(wallets)
         return true
     }
+
+    /** Names the next wallet saved, chosen as adding begins; null gives it the numbered name. */
+    fun nameNext(name: String?) {
+        pendingName = name?.let(::normalizedWalletName)
+    }
+
+    /** The name a new wallet gets when none is chosen. */
+    fun numberedName(): String = "Wallet ${nextNumber()}"
 
     fun needsBackupWarning(id: String): Boolean =
         key(id)?.source == KeySource.New && wallet(id)?.penlockBackup == null
@@ -121,6 +131,8 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
     private fun saveKey(words: List<String>, source: KeySource): String? {
         val derived = derive(words) ?: return null
         val existing = wallets.firstOrNull { it.descriptor == derived.descriptor }
+        val chosen = pendingName
+        pendingName = null
         if (existing != null) {
             keys[existing.id] = LoadedKey(words, source)
             notice = Notice(existing.id, "Already here as ${existing.name}. Its key is loaded.", refusal = false)
@@ -128,7 +140,7 @@ class WalletsViewModel(app: Application) : AndroidViewModel(app) {
         }
         val record = WalletRecord(
             id = UUID.randomUUID().toString(),
-            name = "Wallet ${nextNumber()}",
+            name = chosen ?: numberedName(),
             fingerprint = derived.fingerprint,
             descriptor = derived.descriptor,
             created = LocalDate.now().toString(),
