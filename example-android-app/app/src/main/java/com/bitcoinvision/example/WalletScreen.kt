@@ -66,7 +66,7 @@ fun prettyDate(iso: String): String =
 enum class Primary(val label: String, val tag: String) {
     Review("Review transaction", "review-waiting"),
     BackUp("Back up this wallet", "back-up"),
-    Sign("Sign a transaction", "sign-transaction"),
+    Sign("Send", "sign-transaction"),
     Scan("Scan phrase", "load-wallet-key"),
 }
 
@@ -112,6 +112,7 @@ fun WalletScreen(
     onScan: () -> Unit,
     onStrips: () -> Unit,
     onConnect: () -> Unit,
+    onReceive: () -> Unit,
     onBackUp: () -> Unit,
     onSign: () -> Unit,
     onReview: () -> Unit,
@@ -184,12 +185,18 @@ fun WalletScreen(
             Primary.Scan -> onScan
         }
         Column(Modifier.fillMaxWidth().animateContentSize(Motion.state())) {
-            Button(onClick = go, modifier = Modifier.fillMaxWidth().testTag(primary.tag)) {
-                AnimatedContent(
-                    targetState = primary,
-                    transitionSpec = { fadeIn(Motion.state()) togetherWith fadeOut(Motion.state()) },
-                    label = "primary",
-                ) { Text(it.label) }
+            // With the key loaded and nothing waiting, sending and receiving sit side by side.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = go, modifier = Modifier.weight(1f).testTag(primary.tag)) {
+                    AnimatedContent(
+                        targetState = primary,
+                        transitionSpec = { fadeIn(Motion.state()) togetherWith fadeOut(Motion.state()) },
+                        label = "primary",
+                    ) { Text(it.label) }
+                }
+                if (primary == Primary.Sign) {
+                    Button(onClick = onReceive, modifier = Modifier.weight(1f).testTag("receive")) { Text("Receive") }
+                }
             }
             if (primary == Primary.Scan) {
                 TextButton(onClick = onStrips, modifier = Modifier.fillMaxWidth().testTag("wallet-scan-strips")) {
@@ -212,6 +219,9 @@ fun WalletScreen(
                         )
                     },
                 )
+            }
+            if (primary != Primary.Sign) {
+                WalletLink("Receive", tag = "receive", onClick = onReceive)
             }
             WalletLink("Connect to Sparrow", tag = "connect", onClick = onConnect)
             WalletLink("Key controls", tag = "key-controls", onClick = onKeys)

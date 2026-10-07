@@ -1,6 +1,16 @@
 package com.bitcoinvision.example
 
 import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import uniffi.bitcoin_vision_mobile.receiveAddresses
 
 fun KeySource.description(): String = when (this) {
     KeySource.New -> "Made on this phone."
@@ -80,6 +91,109 @@ fun ConnectWalletScreen(wallets: WalletsViewModel, id: String, onBack: () -> Uni
             },
             modifier = Modifier.fillMaxWidth().testTag("copy-descriptor"),
         ) { Text("Copy descriptor") }
+    }
+}
+
+/** Addresses derived per step as the list nears its end. */
+private const val ADDRESS_STEP = 20u
+
+/**
+ * The receive addresses in order, more as the list is scrolled, from the
+ * saved descriptor alone. The phone never sees the chain, so it cannot say
+ * which are used: Sparrow can. Tapping one shows it as a QR code.
+ */
+@Composable
+fun ReceiveScreen(wallets: WalletsViewModel, id: String, onBack: () -> Unit) {
+    val wallet = wallets.wallet(id)
+    if (wallet == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val addresses = remember(wallet.descriptor) { mutableStateListOf<String>() }
+    var failed by remember(wallet.descriptor) { mutableStateOf(false) }
+    val more = {
+        runCatching { receiveAddresses(wallet.descriptor, addresses.size.toUInt(), ADDRESS_STEP) }
+            .onSuccess { addresses.addAll(it) }
+            .onFailure { failed = true }
+    }
+    val list = rememberLazyListState()
+    val nearEnd by remember {
+        derivedStateOf {
+            val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= addresses.size - 5
+        }
+    }
+    LaunchedEffect(nearEnd, addresses.size) { if (nearEnd && !failed) more() }
+    var shown by remember(id) { mutableStateOf<Int?>(null) }
+    WalletPage("Receive", onBack, snackbar = snackbar, scrolls = false) {
+        Text(
+            "Use a new address each time. Sparrow shows which ones have been used.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (failed && addresses.isEmpty()) {
+            Text("This wallet's addresses could not be worked out.", color = MaterialTheme.colorScheme.error)
+        }
+        LazyColumn(Modifier.weight(1f).testTag("addresses"), state = list) {
+            itemsIndexed(addresses) { i, address ->
+                ListItem(
+                    leadingContent = {
+                        Text(
+                            "${i + 1}",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.widthIn(min = 32.dp),
+                        )
+                    },
+                    headlineContent = {
+                        Text(address, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PlexMono))
+                    },
+                    modifier = Modifier.clickable { shown = i }.testTag("address-$i"),
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+    val index = shown
+    if (index != null) {
+        val address = addresses[index]
+        AlertDialog(
+            onDismissRequest = { shown = null },
+            title = { Text("Address ${index + 1}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StaticQr(address, "Address ${index + 1} as a QR code", "address-qr", Modifier.fillMaxWidth())
+                    SelectionContainer {
+                        Text(
+                            address,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PlexMono),
+                            modifier = Modifier.testTag("address"),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(address))
+                                scope.launch { snackbar.showSnackbar("Address copied") }
+                            },
+                            modifier = Modifier.weight(1f).testTag("copy-address"),
+                        ) { Text("Copy") }
+                        Button(
+                            onClick = {
+                                val send = Intent(Intent.ACTION_SEND)
+                                    .setType("text/plain")
+                                    .putExtra(Intent.EXTRA_TEXT, address)
+                                context.startActivity(Intent.createChooser(send, "Address of ${wallet.name}"))
+                            },
+                            modifier = Modifier.weight(1f).testTag("share-address"),
+                        ) { Text("Share") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { shown = null }) { Text("Close") } },
+        )
     }
 }
 

@@ -150,6 +150,7 @@ fun App(
                     nav.navigate(scanRoute("strips/scan", id))
                 },
                 onConnect = { nav.navigate("wallet/$id/connect") },
+                onReceive = { nav.navigate("wallet/$id/receive") },
                 onBackUp = {
                     if (wallets.key(id) == null) {
                         nav.navigate(loadRoute(id, "backup"))
@@ -166,6 +167,10 @@ fun App(
                 onCancel = { creation.cancel(); nav.popBackStack("add", false) },
                 onComplete = { wallets.completeNew(creation)?.let(open) },
             )
+        }
+        composable("wallet/{id}/receive") { entry ->
+            val id = entry.arguments?.getString("id") ?: return@composable
+            ReceiveScreen(wallets, id, onBack = { nav.popBackStack() })
         }
         composable("wallet/{id}/connect") { entry ->
             val id = entry.arguments?.getString("id") ?: return@composable

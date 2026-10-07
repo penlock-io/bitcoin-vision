@@ -43,6 +43,8 @@ fun WalletPage(
     actions: @Composable RowScope.() -> Unit = {},
     snackbar: SnackbarHostState? = null,
     floatingAction: @Composable () -> Unit = {},
+    /** False for a page whose content scrolls itself, such as a lazy list. */
+    scrolls: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Scaffold(
@@ -68,7 +70,8 @@ fun WalletPage(
         floatingActionButton = floatingAction,
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            Modifier.fillMaxSize().padding(padding)
+                .then(if (scrolls) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content,

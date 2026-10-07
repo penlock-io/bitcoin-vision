@@ -18,7 +18,7 @@ class WalletPageTest {
     fun the_unloaded_primary_is_the_camera_under_the_old_load_tag() {
         assertEquals("Scan phrase", Primary.Scan.label)
         assertEquals("load-wallet-key", Primary.Scan.tag)
-        assertEquals("Sign a transaction", Primary.Sign.label)
+        assertEquals("Send", Primary.Sign.label)
         assertEquals("Back up this wallet", Primary.BackUp.label)
         assertEquals("Review transaction", Primary.Review.label)
     }
