@@ -187,17 +187,23 @@ fun WalletScreen(
             Primary.Scan -> onScan
         }
         Column(Modifier.fillMaxWidth().animateContentSize(Motion.state())) {
-            // With the key loaded and nothing waiting, sending and receiving sit side by side.
+            // Send and Receive are always here; Send waits for the words to be scanned.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = go, modifier = Modifier.weight(1f).testTag(primary.tag)) {
+                Button(
+                    onClick = onSign,
+                    enabled = key != null,
+                    modifier = Modifier.weight(1f).testTag(Primary.Sign.tag),
+                ) { Text(Primary.Sign.label) }
+                Button(onClick = onReceive, modifier = Modifier.weight(1f).testTag("receive")) { Text("Receive") }
+            }
+            // Anything else the wallet needs first: a waiting review, a backup, or the words.
+            if (primary != Primary.Sign) {
+                Button(onClick = go, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag(primary.tag)) {
                     AnimatedContent(
                         targetState = primary,
                         transitionSpec = { fadeIn(Motion.state()) togetherWith fadeOut(Motion.state()) },
                         label = "primary",
                     ) { Text(it.label) }
-                }
-                if (primary == Primary.Sign) {
-                    Button(onClick = onReceive, modifier = Modifier.weight(1f).testTag("receive")) { Text("Receive") }
                 }
             }
             if (primary == Primary.Scan) {
@@ -222,9 +228,6 @@ fun WalletScreen(
                         )
                     },
                 )
-            }
-            if (primary != Primary.Sign) {
-                WalletLink("Receive", tag = "receive", onClick = onReceive)
             }
             WalletLink("Connect to Sparrow", tag = "connect", onClick = onConnect)
             WalletLink("Secret words", tag = "key-controls", onClick = onKeys)
