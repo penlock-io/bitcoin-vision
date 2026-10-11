@@ -6,7 +6,7 @@ edition = "2024"
 repository = "https://github.com/penlock-io/bitcoin-vision"
 license = "MIT OR Apache-2.0"
 publish = false
-include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/tests/*.rs", "/examples/scan.rs", "/models/cell-reference.onnx", "/models/README.md"]
+include = ["/Cargo.toml", "/LICENSE", "/LICENSE-APACHE", "/src/**/*.rs", "/tests/*.rs", "/examples/*.rs", "/models/cell-reference.onnx", "/models/README.md"]
 
 [dependencies]
 bitcoin-vision-core = { path = "../core", version = "0.1.0" }
@@ -33,6 +33,10 @@ bundled-models = ["onnx"]
 [[example]]
 name = "scan"
 required-features = ["bundled-models", "print"]
+
+[[example]]
+name = "print_sheet"
+required-features = ["print"]
 
 [[test]]
 name = "scanner"

@@ -50,6 +50,15 @@ The implementation is `penlock-scan` (photograph to symbols) and `penlock` (the
 arithmetic, and the wheel the paper version is). Both are plain Rust crates in this repository.
 [How it works](docs/pipelines/penlock-shares.md).
 
+[Download the blank registered Penlock worksheet (PDF)](docs/penlock-registered-worksheet.pdf).
+It has the black square scan guides on each strip. Print both A4 pages duplex,
+flipping on the long edge, at **actual size / 100%** (not “fit to page”). To
+regenerate it from the sheet renderer:
+
+```sh
+cargo run --locked -p penlock-scan --features print --example print_sheet -- docs/penlock-registered-worksheet.pdf
+```
+
 ## Using the share library
 
 `bitcoin_vision::penlock` is `penlock-scan`. With `bundled-models` it embeds
