@@ -108,7 +108,7 @@ default: `bitcoin_vision::words` is the word-list pipeline and
 This repository contains the required ONNX models. Use the `bundled-models`
 feature with a local path or version-pinned Git dependency; there is no runtime
 download or network service. The repository is
-`https://github.com/llfourn/bitcoin-vision`. The approximately 24.7 MB model
+`https://github.com/penlock-io/bitcoin-vision`. The approximately 24.7 MB model
 set makes a small crates.io package a separate distribution decision, not
 something achieved by hiding the models at runtime.
 

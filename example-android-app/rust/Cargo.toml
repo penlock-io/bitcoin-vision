@@ -5,7 +5,7 @@ members = ["bitcoin-vision-mobile"]
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/llfourn/bitcoin-vision"
+repository = "https://github.com/penlock-io/bitcoin-vision"
 
 [profile.dev]
 opt-level = 1
