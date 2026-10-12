@@ -155,6 +155,14 @@ impl Scanner {
             .map_err(ScanError::Model)
     }
 
+    stage! {
+        /// The text recogniser this scanner reads with, for research that
+        /// checks how it was prepared.
+        pub fn recogniser(&self) -> &Recogniser {
+            &self.recogniser
+        }
+    }
+
     /// A scanner over models the caller already built, for a caller that
     /// loads them its own way: the phone prepares its recogniser for its
     /// hardware, the research harness picks its own files.
