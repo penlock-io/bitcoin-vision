@@ -188,9 +188,9 @@ dependencies = [
  "bitcoin-vision-core",
  "image",
  "imageproc",
+ "miniz_oxide",
  "pdf-writer",
  "resvg",
- "svg2pdf",
 ]
 
 [[package]]
@@ -1618,19 +1618,6 @@ checksum = "ad3df9b59e2eded8d825c7c4363ad339a20fb6bc0b9a4778560f518f59910b15"
 dependencies = [
  "hashbrown 0.16.1",
  "serde",
-]
-
-[[package]]
-name = "svg2pdf"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50dc062439cc1a396181059c80932a6e6bd731b130e674c597c0c8874b6df22"
-dependencies = [
- "log",
- "miniz_oxide",
- "once_cell",
- "pdf-writer",
- "usvg",
 ]
 
 [[package]]

@@ -13,10 +13,10 @@ bitcoin-vision-core = { path = "../core", version = "0.1.0" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 imageproc = { version = "0.27", default-features = false }
 resvg = "0.45"
-svg2pdf = { version = "0.13", default-features = false, optional = true }
 pdf-writer = { version = "0.12", optional = true }
+miniz_oxide = { version = "0.8", optional = true }
 
 [features]
 default = []
 # Writing a form out as a PDF for printing; reading never needs it.
-print = ["dep:svg2pdf", "dep:pdf-writer"]
+print = ["dep:pdf-writer", "dep:miniz_oxide"]

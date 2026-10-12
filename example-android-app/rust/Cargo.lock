@@ -313,9 +313,9 @@ dependencies = [
  "bitcoin-vision-core",
  "image",
  "imageproc",
+ "miniz_oxide",
  "pdf-writer",
  "resvg",
- "svg2pdf",
 ]
 
 [[package]]
@@ -2166,19 +2166,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "svg2pdf"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50dc062439cc1a396181059c80932a6e6bd731b130e674c597c0c8874b6df22"
-dependencies = [
- "log",
- "miniz_oxide",
- "once_cell",
- "pdf-writer",
- "usvg",
-]
 
 [[package]]
 name = "svgtypes"

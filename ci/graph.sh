@@ -55,7 +55,7 @@ refuse "bitcoin-vision" "$(reaches --target all --no-default-features --features
 
 phone="$(reaches --manifest-path example-android-app/rust/Cargo.toml \
     --target aarch64-linux-android -p bitcoin-vision-mobile)"
-refuse "bitcoin-vision-mobile" "$phone" svg2pdf pdf-writer
+refuse "bitcoin-vision-mobile" "$phone" pdf-writer
 
 # The stages are public only under the word pipeline's `research` feature,
 # which the research harness turns on and nothing that ships may.
