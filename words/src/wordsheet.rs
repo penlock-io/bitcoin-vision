@@ -8,8 +8,8 @@
 //! reader cuts from it. A field's border and number sit outside its
 //! interior, so an interior holds handwriting and nothing else.
 //!
-//! Coordinates are millimetres in the band's reading frame. The card prints
-//! on A4 where a band prints, its back panel behind it for a long-edge flip.
+//! Coordinates are millimetres in the band's reading frame. Five cards print
+//! to an A4 page, each back panel behind its card for a long-edge flip.
 //! Nothing secret is ever printed, and the back is for what is not secret:
 //! when, which wallet, whose.
 
@@ -55,8 +55,13 @@ impl WordSheet {
     /// A field's interior sits this far inside its printed border, so the
     /// border's ink is never read as handwriting.
     pub const MARGIN: f64 = 0.6;
-    /// Where on the A4 page the card prints: a band's first place.
-    pub const SLOT: usize = 0;
+    /// Five cards to an A4 page, the most its 297 mm takes at 51 mm a card.
+    /// Penlock's worksheet spaces four; these keep 4 mm between cut lines.
+    pub const PAGE: BandPage = BandPage {
+        slots: 5,
+        top: 13.0,
+        pitch: 55.0,
+    };
 
     /// Where the card's fiducials, orientation mark and mark field are, for
     /// finding it in a photo: a band's.
@@ -173,31 +178,35 @@ pub fn card_group(fill: Option<&WordFill>) -> String {
     s
 }
 
-/// The A4 front as a self-contained SVG, the card where a band prints, blank
-/// or filled.
-pub fn front_svg(fill: Option<&WordFill>) -> String {
+/// The A4 front as a self-contained SVG: blank cards in every place on the
+/// page. Only a cut card is ever filled.
+pub fn front_svg() -> String {
     let (w, h) = BandPage::PAGE;
-    let body = format!(
-        "<rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n{}",
-        BandPage.place(WordSheet::SLOT, &card_group(fill))
-    );
+    let card = card_group(None);
+    let mut body = format!("<rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n");
+    for slot in 0..WordSheet::PAGE.slots {
+        body.push_str(&WordSheet::PAGE.place(slot, &card));
+    }
     svg_document(w, h, &body)
 }
 
-/// The A4 back as a self-contained SVG: the band's panel (date, wallet,
-/// owner) behind the card after a long-edge flip, with a QR code to the
+/// The A4 back as a self-contained SVG: behind each card after a long-edge
+/// flip, the band's panel (date, wallet, owner) with a QR code to the
 /// repository and its URL.
 #[cfg(feature = "print")]
 pub fn back_svg() -> String {
     let (w, h) = BandPage::PAGE;
+    let modules = qr_modules(REPOSITORY_URL);
     let mut body = format!("<rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n");
-    BandPage.draw_back_panel(
-        &mut body,
-        WordSheet::SLOT,
-        "Scanner",
-        REPOSITORY_URL.trim_start_matches("https://"),
-        &qr_modules(REPOSITORY_URL),
-    );
+    for slot in 0..WordSheet::PAGE.slots {
+        WordSheet::PAGE.draw_back_panel(
+            &mut body,
+            slot,
+            "Scanner",
+            REPOSITORY_URL.trim_start_matches("https://"),
+            &modules,
+        );
+    }
     svg_document(w, h, &body)
 }
 
@@ -218,14 +227,9 @@ pub fn qr_modules(text: &str) -> Vec<Vec<bool>> {
 #[cfg(feature = "print")]
 pub fn sheet_pdf() -> Result<Vec<u8>, RenderError> {
     let (w, h) = BandPage::PAGE;
-    let front = flatten(&front_svg(None), w, h)?;
+    let front = flatten(&front_svg(), w, h)?;
     let back = flatten(&back_svg(), w, h)?;
     bitcoin_vision_forms::pdf::document(&[&front, &back], BandPage::PAGE)
-}
-
-/// The front rendered at `dpi`, blank or filled.
-pub fn front_png(fill: Option<&WordFill>, dpi: f64) -> Result<RgbImage, RenderError> {
-    rasterize(&front_svg(fill), dpi)
 }
 
 /// The card cut out along its border, as a self-contained SVG in its

@@ -289,35 +289,35 @@ impl Sheet {
     /// Left edge of every front band.
     pub const BAND_X: f64 = BandPage::BAND_X;
     /// Top of the first band.
-    pub const BAND_TOP: f64 = BandPage::BAND_TOP;
+    pub const BAND_TOP: f64 = BandPage::PENLOCK.top;
     /// Band pitch down the page.
-    pub const BAND_PITCH: f64 = BandPage::BAND_PITCH;
+    pub const BAND_PITCH: f64 = BandPage::PENLOCK.pitch;
 
     /// The band the strip in `slot` occupies on the front, page
     /// millimetres.
     pub fn band(&self, slot: usize) -> Rect {
-        BandPage.band(slot)
+        BandPage::PENLOCK.band(slot)
     }
 
     /// A point in a strip's reading frame on the front page.
     pub fn to_page(&self, slot: usize, x: f64, y: f64) -> (f64, f64) {
-        BandPage.to_page(slot, x, y)
+        BandPage::PENLOCK.to_page(slot, x, y)
     }
 
     /// A rectangle in a strip's reading frame on the front page.
     pub fn rect_to_page(&self, slot: usize, r: Rect) -> Rect {
-        BandPage.rect_to_page(slot, r)
+        BandPage::PENLOCK.rect_to_page(slot, r)
     }
 
     /// Where a rectangle of the front lands on the back after a long-edge
     /// duplex flip.
     pub fn flipped(&self, r: Rect) -> Rect {
-        BandPage.flipped(r)
+        BandPage::PENLOCK.flipped(r)
     }
 
     /// The back panel of `slot`, in the back page's own coordinates.
     pub fn back_panel(&self, slot: usize) -> BackPanel {
-        BandPage.back_panel(slot)
+        BandPage::PENLOCK.back_panel(slot)
     }
 }
 
@@ -581,7 +581,7 @@ pub fn front_svg_with(fill: Option<&Fill<'_>>, aids: Aids) -> Result<String, Ren
         PAGE.0, PAGE.1
     );
     for kind in StripKind::ALL {
-        body.push_str(&BandPage.place(
+        body.push_str(&BandPage::PENLOCK.place(
             kind.slot(),
             &strip_group_with(kind, fill, kind.slot() as u64, aids),
         ));
@@ -601,7 +601,7 @@ pub fn back_svg() -> Result<String, RenderError> {
         .map(|row| row.chars().map(|c| c == '#').collect())
         .collect();
     for kind in StripKind::ALL {
-        BandPage.draw_back_panel(
+        BandPage::PENLOCK.draw_back_panel(
             &mut body,
             kind.slot(),
             "Recovery",

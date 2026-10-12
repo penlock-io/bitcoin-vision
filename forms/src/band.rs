@@ -225,25 +225,32 @@ impl Band {
 /// An A4 page of bands: where each band sits on the front, and where its
 /// panel sits on the back after a long-edge flip.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct BandPage;
+pub struct BandPage {
+    /// Bands on the page.
+    pub slots: usize,
+    /// Top of the first band.
+    pub top: f64,
+    /// Band pitch down the page.
+    pub pitch: f64,
+}
 
 impl BandPage {
     /// A4 portrait, millimetres.
     pub const PAGE: (f64, f64) = (210.0, 297.0);
-    /// Bands on a page.
-    pub const SLOTS: usize = 4;
     /// Left edge of every front band.
     pub const BAND_X: f64 = 17.0;
-    /// Top of the first band.
-    pub const BAND_TOP: f64 = 35.8;
-    /// Band pitch down the page.
-    pub const BAND_PITCH: f64 = 58.2;
+    /// Upstream's worksheet: four bands, spaced as upstream prints them.
+    pub const PENLOCK: BandPage = BandPage {
+        slots: 4,
+        top: 35.8,
+        pitch: 58.2,
+    };
 
     /// The band in `slot` on the front, page millimetres.
     pub fn band(&self, slot: usize) -> Rect {
         Rect {
             x: BandPage::BAND_X,
-            y: BandPage::BAND_TOP + BandPage::BAND_PITCH * slot as f64,
+            y: self.top + self.pitch * slot as f64,
             w: Band::LENGTH,
             h: Band::WIDTH,
         }
@@ -294,7 +301,7 @@ impl BandPage {
     /// panels run to within 0.3 mm of the band's edge; these stop 0.7 mm
     /// short so a slightly misregistered print still cuts clean.
     pub fn back_panel(&self, slot: usize) -> BackPanel {
-        let y = BandPage::BAND_TOP + BandPage::BAND_PITCH * slot as f64 + 9.6;
+        let y = self.top + self.pitch * slot as f64 + 9.6;
         let h = 40.3;
         let at = |x, w| Rect { x, y, w, h };
         BackPanel {
