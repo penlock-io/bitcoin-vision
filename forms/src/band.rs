@@ -359,14 +359,26 @@ impl BandPage {
             INK,
             title,
         ));
-        out.push_str(&rotated(
-            panel.url_x,
-            panel.recovery.y + panel.recovery.h / 2.0,
-            2.8,
-            "middle",
-            INK,
-            url,
-        ));
+        // a URL longer than the panel breaks after its last '/' rather than
+        // shrinking, so it stays as easy to type as upstream's
+        const URL_SIZE: f64 = 2.8;
+        const MONO_ADVANCE: f64 = 0.6;
+        let lines = match url.rfind('/') {
+            Some(cut) if url.len() as f64 * MONO_ADVANCE * URL_SIZE > panel.recovery.h => {
+                vec![&url[..=cut], &url[cut + 1..]]
+            }
+            _ => vec![url],
+        };
+        for (i, line) in lines.iter().enumerate() {
+            out.push_str(&rotated(
+                panel.url_x + i as f64 * 1.3 * URL_SIZE,
+                panel.recovery.y + panel.recovery.h / 2.0,
+                URL_SIZE,
+                "middle",
+                INK,
+                line,
+            ));
+        }
         let module = panel.qr.w / modules.len() as f64;
         for (j, row) in modules.iter().enumerate() {
             for (i, &dark) in row.iter().enumerate() {

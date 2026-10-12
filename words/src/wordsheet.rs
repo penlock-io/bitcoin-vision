@@ -1,22 +1,27 @@
-//! The recovery phrase sheet: a printed page with twelve fields for a
-//! phrase, one word per field, laid out so a phone can find the page
-//! by its marks and read each field by its place instead of finding
-//! words in a photo. [`WordSheet`] is the one contract: it says where
-//! the aids, the identity marks and the twelve writable interiors are,
-//! the renderer draws from it, and the locator will read from it. The
-//! frame and number printed beside a field sit outside its interior by
-//! a quiet margin, so an interior holds handwriting and nothing else.
+//! The recovery phrase card: a Penlock band that holds twelve BIP39 words
+//! instead of six symbols a row. It has the share strip's size, corner
+//! squares, mark field, rows and look, all from [`bitcoin_vision_forms::band`],
+//! so a phrase and its shares are cut, stored and photographed alike, and a
+//! phone finds either by the same marks. The mark field's id byte says which
+//! it is. [`WordSheet`] is the one contract: where the aids, the identity marks
+//! and the twelve writable interiors are. The renderer draws from it and the
+//! reader cuts from it. A field's border and number sit outside its
+//! interior, so an interior holds handwriting and nothing else.
 //!
-//! Coordinates are millimetres in the sheet's own frame, origin at the
-//! frame's top-left corner; the frame sits centred on A4 or Letter.
-//! Nothing secret is ever printed.
+//! Coordinates are millimetres in the band's reading frame. The card prints
+//! on A4 where a band prints, its back panel behind it for a long-edge flip.
+//! Nothing secret is ever printed, and the back is for what is not secret:
+//! when, which wallet, whose.
 
+use bitcoin_vision_forms::band::{Band, BandPage, rect};
 use bitcoin_vision_forms::frame::{
     Frame, Geometry, RECTIFIED_PX_PER_MM, locate_frames, paper_white, read_field,
 };
 use bitcoin_vision_forms::marks::{Field, decode_with, encode_with};
+#[cfg(feature = "print")]
+use bitcoin_vision_forms::render::flatten;
 use bitcoin_vision_forms::render::{
-    Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, rasterize, svg_document, text,
+    Font, GUIDE, INK, Jitter, Rect, RenderError, rasterize, svg_document, text,
 };
 use image::{GrayImage, RgbImage};
 use rand::{Rng, SeedableRng};
@@ -27,213 +32,72 @@ use crate::numbering::Numbering;
 use crate::phrase::{PageScan, Reader, WordBox, read_crop};
 use crate::recogniser::Recogniser;
 
-/// The sheet's version, printed in its identity marks.
-pub const VERSION: u8 = 1;
+/// The card's version, printed in its identity marks. Version 1 was a full
+/// A4 page; no reader takes it any longer.
+pub const VERSION: u8 = 2;
 
-/// The id byte the sheet prints in its mark field's top row: another
-/// id than the strips', so a strip reader sees a word sheet as foreign
-/// and a word-sheet reader sees a strip as foreign, each refusing the
-/// other by the same rule that refuses any other project.
+/// The id byte the card prints in its mark field's top row: another id than
+/// the strips', so a strip reader sees a phrase card as foreign and a
+/// phrase-card reader sees a strip as foreign, each refusing the other by the
+/// same rule that refuses any other project.
 pub const WORD_SHEET_ID: u8 = b'W';
 
-/// The page frame every mark and field is placed in, millimetres.
-pub const FRAME: (f64, f64) = (190.0, 260.0);
+/// The repository the back's QR code and printed URL point to.
+pub const REPOSITORY_URL: &str = "https://github.com/penlock-io/bitcoin-vision";
 
-/// A paper size the frame is printed on.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Paper {
-    /// 210 × 297 mm.
-    A4,
-    /// 8.5 × 11 inches.
-    Letter,
-}
-
-impl Paper {
-    /// Every paper size.
-    pub const ALL: [Paper; 2] = [Paper::A4, Paper::Letter];
-
-    /// The command-line name.
-    pub fn name(self) -> &'static str {
-        match self {
-            Paper::A4 => "a4",
-            Paper::Letter => "letter",
-        }
-    }
-
-    /// Looks a paper up by name.
-    pub fn from_name(name: &str) -> Option<Paper> {
-        Paper::ALL.into_iter().find(|p| p.name() == name)
-    }
-
-    /// Width and height in millimetres.
-    pub fn size(self) -> (f64, f64) {
-        match self {
-            Paper::A4 => (210.0, 297.0),
-            Paper::Letter => (215.9, 279.4),
-        }
-    }
-
-    /// Where the frame's origin lies on the paper: centred.
-    pub fn frame_origin(self) -> (f64, f64) {
-        let (w, h) = self.size();
-        ((w - FRAME.0) / 2.0, (h - FRAME.1) / 2.0)
-    }
-}
-
-/// The word sheet's geometry.
+/// The card's geometry: a band's, with each row one writable field.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct WordSheet;
 
 impl WordSheet {
-    /// Side of the corner fiducials: the worksheet's, so the same blob
-    /// search finds them.
-    pub const FIDUCIAL: f64 = 7.0;
-    /// Fiducial inset from the frame's edge.
-    pub const INSET: f64 = 4.0;
-    /// Clearance kept free of other ink around fiducials and marks.
-    pub const QUIET: f64 = 2.0;
-    /// Side of a mark-field slot: larger than a strip's, since the
-    /// sheet is photographed from further away.
-    pub const SLOT: f64 = 2.4;
-    /// Fields down the page.
-    pub const FIELDS: usize = 12;
-    /// Top of the first field's interior.
-    pub const FIELDS_TOP: f64 = 40.0;
-    /// Pitch between fields.
-    pub const FIELD_PITCH: f64 = 17.0;
-    /// A field's writable interior.
-    pub const INTERIOR: (f64, f64) = (128.0, 12.0);
-    /// Left edge of the interiors.
-    pub const INTERIOR_LEFT: f64 = 38.0;
-    /// The printed frame sits this far outside the interior, and the
-    /// number this far left of the frame.
-    pub const MARGIN: f64 = 1.0;
+    /// Fields down the card.
+    pub const FIELDS: usize = Band::ROWS;
+    /// A field's interior sits this far inside its printed border, so the
+    /// border's ink is never read as handwriting.
+    pub const MARGIN: f64 = 0.6;
+    /// Where on the A4 page the card prints: a band's first place.
+    pub const SLOT: usize = 0;
 
-    /// Where the sheet's fiducials, orientation mark and mark field are,
-    /// for finding it in a photo.
+    /// Where the card's fiducials, orientation mark and mark field are, for
+    /// finding it in a photo: a band's.
     pub fn geometry(&self) -> Geometry {
-        Geometry {
-            bounds: self.bounds(),
-            fiducials: self.fiducials(),
-            mark: self.mark(),
-            mark_slots: self.mark_slots(),
-        }
+        Band.geometry()
     }
 
-    /// The whole frame.
+    /// The whole card.
     pub fn bounds(&self) -> Rect {
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            w: FRAME.0,
-            h: FRAME.1,
-        }
+        Band.bounds()
     }
 
     /// The four fiducials: top-left, top-right, bottom-left, bottom-right.
     pub fn fiducials(&self) -> [Rect; 4] {
-        let far_x = FRAME.0 - WordSheet::INSET - WordSheet::FIDUCIAL;
-        let far_y = FRAME.1 - WordSheet::INSET - WordSheet::FIDUCIAL;
-        let at = |x, y| Rect {
-            x,
-            y,
-            w: WordSheet::FIDUCIAL,
-            h: WordSheet::FIDUCIAL,
-        };
-        [
-            at(WordSheet::INSET, WordSheet::INSET),
-            at(far_x, WordSheet::INSET),
-            at(WordSheet::INSET, far_y),
-            at(far_x, far_y),
-        ]
+        Band.fiducials()
     }
 
     /// The orientation mark beside the top-left fiducial.
     pub fn mark(&self) -> Rect {
-        Rect {
-            x: 15.5,
-            y: 5.5,
-            w: 4.0,
-            h: 4.0,
-        }
+        Band.mark()
     }
 
-    /// The sixteen mark-field slots, laid out as the strip's are
-    /// (docs/marks.md): eight between the orientation mark and the
-    /// top-right fiducial, eight between the bottom fiducials, left to
-    /// right, [`WordSheet::QUIET`] clear of the dark squares flanking
-    /// them; slot `i` carries bit `i` of the printed field.
+    /// The sixteen mark-field slots; slot `i` carries bit `i` of the printed
+    /// field.
     pub fn mark_slots(&self) -> [Rect; 16] {
-        let side = WordSheet::SLOT;
-        let row = |from: f64, to: f64, centre: f64, i: usize| Rect {
-            x: from + (to - from - side) / 7.0 * i as f64,
-            y: centre - side / 2.0,
-            w: side,
-            h: side,
-        };
-        let mark = self.mark();
-        let [tl, tr, bl, br] = self.fiducials();
-        std::array::from_fn(|i| {
-            if i < 8 {
-                row(
-                    mark.x + mark.w + WordSheet::QUIET,
-                    tr.x - WordSheet::QUIET - side,
-                    tl.y + tl.h / 2.0,
-                    i,
-                )
-            } else {
-                row(
-                    bl.x + bl.w + WordSheet::QUIET,
-                    br.x - WordSheet::QUIET - side,
-                    bl.y + bl.h / 2.0,
-                    i - 8,
-                )
-            }
-        })
+        Band.mark_slots()
     }
 
-    /// Where the version is printed: under the orientation mark, out
-    /// of every mark's way.
-    pub fn version_anchor(&self) -> (f64, f64) {
-        let mark = self.mark();
-        (mark.x, mark.y + mark.h + 3.0)
-    }
-
-    /// The printed identity: the word sheet's id byte and its version.
+    /// The printed identity: the card's id byte and its version.
     pub fn field(&self) -> u16 {
         encode_with(WORD_SHEET_ID, VERSION)
     }
 
+    /// The printed border of field `i`: the band's row.
+    pub fn frame(&self, i: usize) -> Rect {
+        Band.row(i)
+    }
+
     /// The writable interiors, in phrase order.
     pub fn fields(&self) -> [Rect; WordSheet::FIELDS] {
-        std::array::from_fn(|i| Rect {
-            x: WordSheet::INTERIOR_LEFT,
-            y: WordSheet::FIELDS_TOP + WordSheet::FIELD_PITCH * i as f64,
-            w: WordSheet::INTERIOR.0,
-            h: WordSheet::INTERIOR.1,
-        })
-    }
-
-    /// The printed frame around field `i`, just outside its interior.
-    pub fn frame(&self, i: usize) -> Rect {
-        self.fields()[i].grow(WordSheet::MARGIN)
-    }
-
-    /// Where field `i`'s number is printed: right-aligned, left of the
-    /// frame.
-    pub fn number_anchor(&self, i: usize) -> (f64, f64) {
-        let f = self.frame(i);
-        (f.x - WordSheet::MARGIN - 1.0, f.y + f.h / 2.0)
-    }
-
-    /// The title's centre.
-    pub fn title_center(&self) -> (f64, f64) {
-        (FRAME.0 / 2.0, 22.0)
-    }
-
-    /// The instruction line's centre.
-    pub fn hint_center(&self) -> (f64, f64) {
-        (FRAME.0 / 2.0, 30.0)
+        std::array::from_fn(|i| self.frame(i).grow(-WordSheet::MARGIN))
     }
 }
 
@@ -248,81 +112,22 @@ pub struct WordFill {
     pub jitter: Option<(Jitter, u64)>,
 }
 
-fn rect(s: &mut String, r: Rect, style: &str) {
-    s.push_str(&format!(
-        "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" {style}/>\n",
-        r.x, r.y, r.w, r.h
-    ));
-}
-
-/// The sheet's SVG elements in the frame's coordinates, blank or with
-/// `fill`'s words, without the `<svg>` wrapper.
-pub fn frame_group(fill: Option<&WordFill>) -> String {
+/// The card's SVG elements in its reading frame, blank or with `fill`'s
+/// words, without the `<svg>` wrapper.
+pub fn card_group(fill: Option<&WordFill>) -> String {
     let t = WordSheet;
     let mut s = String::new();
-    rect(&mut s, t.bounds(), "fill=\"#ffffff\"");
-    for f in t.fiducials() {
-        rect(&mut s, f, &format!("fill=\"{INK}\""));
-    }
-    rect(&mut s, t.mark(), &format!("fill=\"{INK}\""));
-    let field = t.field();
-    for (i, slot) in t.mark_slots().iter().enumerate() {
-        if field >> i & 1 == 1 {
-            rect(&mut s, *slot, &format!("fill=\"{INK}\""));
-        } else {
-            rect(
-                &mut s,
-                *slot,
-                &format!("fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.2\""),
-            );
-        }
-    }
-    let (tx, ty) = t.title_center();
-    s.push_str(&text(
-        tx,
-        ty,
-        6.0,
-        "middle",
-        LABEL_FONT,
-        INK,
-        "Recovery phrase sheet",
-    ));
-    let (hx, hy) = t.hint_center();
-    s.push_str(&text(
-        hx,
-        hy,
-        3.2,
-        "middle",
-        LABEL_FONT,
-        TEXT,
-        "One word per field, lowercase, inside the frame, in pen. Keep this sheet as secret as the words.",
-    ));
-    let (vx, vy) = t.version_anchor();
-    s.push_str(&text(
-        vx,
-        vy,
-        2.6,
-        "start",
-        LABEL_FONT,
-        TEXT,
-        &format!("v{VERSION}"),
-    ));
+    Band.draw_border(&mut s);
+    Band.draw_aids(&mut s, t.field());
+    Band.draw_title(&mut s, "BIP39 Phrase");
+    Band.draw_hint(&mut s, "Keep this secret");
     for i in 0..WordSheet::FIELDS {
+        Band.draw_label(&mut s, i);
         rect(
             &mut s,
             t.frame(i),
-            &format!("fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.3\""),
+            &format!("fill=\"#ffffff\" stroke=\"{GUIDE}\" stroke-width=\"0.3\""),
         );
-        let (nx, ny) = t.number_anchor(i);
-        s.push_str(&text(
-            nx,
-            ny,
-            3.6,
-            "end",
-            LABEL_FONT,
-            TEXT,
-            &format!("{}.", i + 1),
-        ));
     }
     if let Some(fill) = fill {
         let mut rng = fill
@@ -331,10 +136,11 @@ pub fn frame_group(fill: Option<&WordFill>) -> String {
         for (i, word) in fill.words.iter().enumerate().take(WordSheet::FIELDS) {
             let Some(word) = word else { continue };
             let interior = t.fields()[i];
-            // a large hand: the word starts a little in from the left
-            // and its letters stand most of the interior's height
+            // a hand writes to the field it is given: the word starts a
+            // little in from the left and its letters stand most of the
+            // interior's height
             let base = interior.h * 0.62;
-            let (cx, cy) = (interior.x + 4.0, interior.y + interior.h / 2.0);
+            let (cx, cy) = (interior.x + 2.0, interior.y + interior.h / 2.0);
             let (dx, dy, size, angle) = match &mut rng {
                 Some((j, rng)) => (
                     rng.random_range(-j.offset_mm..=j.offset_mm),
@@ -367,30 +173,70 @@ pub fn frame_group(fill: Option<&WordFill>) -> String {
     s
 }
 
-/// The sheet as a self-contained SVG on `paper`, blank or filled.
-pub fn sheet_svg(paper: Paper, fill: Option<&WordFill>) -> String {
-    let (w, h) = paper.size();
-    let (ox, oy) = paper.frame_origin();
+/// The A4 front as a self-contained SVG, the card where a band prints, blank
+/// or filled.
+pub fn front_svg(fill: Option<&WordFill>) -> String {
+    let (w, h) = BandPage::PAGE;
     let body = format!(
-        "<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n<g transform=\"translate({ox:.2} {oy:.2})\">\n{}</g>\n",
-        frame_group(fill)
+        "<rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n{}",
+        BandPage.place(WordSheet::SLOT, &card_group(fill))
     );
     svg_document(w, h, &body)
 }
 
-/// The blank sheet as a one-page PDF.
+/// The A4 back as a self-contained SVG: the band's panel (date, wallet,
+/// owner) behind the card after a long-edge flip, with a QR code to the
+/// repository and its URL.
 #[cfg(feature = "print")]
-pub fn sheet_pdf(paper: Paper) -> Result<Vec<u8>, RenderError> {
-    bitcoin_vision_forms::pdf::document(&[&sheet_svg(paper, None)], paper.size())
+pub fn back_svg() -> String {
+    let (w, h) = BandPage::PAGE;
+    let mut body = format!("<rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n");
+    BandPage.draw_back_panel(
+        &mut body,
+        WordSheet::SLOT,
+        "Scanner",
+        REPOSITORY_URL.trim_start_matches("https://"),
+        &qr_modules(REPOSITORY_URL),
+    );
+    svg_document(w, h, &body)
 }
 
-/// The sheet rendered at `dpi`, blank or filled.
-pub fn sheet_png(
-    paper: Paper,
-    fill: Option<&WordFill>,
-    dpi: f64,
-) -> Result<image::RgbImage, RenderError> {
-    rasterize(&sheet_svg(paper, fill), dpi)
+/// `text` as QR modules, row-major, dark `true`.
+#[cfg(feature = "print")]
+pub fn qr_modules(text: &str) -> Vec<Vec<bool>> {
+    let code = qrcode::QrCode::new(text.as_bytes()).expect("a URL fits a QR code");
+    let width = code.width();
+    let colors = code.to_colors();
+    colors
+        .chunks(width)
+        .map(|row| row.iter().map(|c| *c == qrcode::Color::Dark).collect())
+        .collect()
+}
+
+/// The card front then back as a two-page A4 PDF, for printing at actual
+/// size on both sides with a long-edge flip.
+#[cfg(feature = "print")]
+pub fn sheet_pdf() -> Result<Vec<u8>, RenderError> {
+    let (w, h) = BandPage::PAGE;
+    let front = flatten(&front_svg(None), w, h)?;
+    let back = flatten(&back_svg(), w, h)?;
+    bitcoin_vision_forms::pdf::document(&[&front, &back], BandPage::PAGE)
+}
+
+/// The front rendered at `dpi`, blank or filled.
+pub fn front_png(fill: Option<&WordFill>, dpi: f64) -> Result<RgbImage, RenderError> {
+    rasterize(&front_svg(fill), dpi)
+}
+
+/// The card cut out along its border, as a self-contained SVG in its
+/// reading frame, blank or filled.
+pub fn card_svg(fill: Option<&WordFill>) -> String {
+    svg_document(Band::WIDTH, Band::LENGTH, &card_group(fill))
+}
+
+/// The cut card rendered at `dpi`, blank or filled.
+pub fn card_png(fill: Option<&WordFill>, dpi: f64) -> Result<RgbImage, RenderError> {
+    rasterize(&card_svg(fill), dpi)
 }
 
 /// Ink in a field's interior is this much darker than the paper.
