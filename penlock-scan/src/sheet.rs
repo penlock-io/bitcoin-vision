@@ -24,9 +24,10 @@ use penlock::{Share, ShareIndex, Symbol};
 use rand::{Rng, RngCore, SeedableRng};
 
 use bitcoin_vision_forms::Geometry;
+pub use bitcoin_vision_forms::band::BackPanel;
+use bitcoin_vision_forms::band::{Band, BandPage, rect};
 use bitcoin_vision_forms::render::{
-    Font, GUIDE, INK, Jitter, LABEL_FONT, Rect, RenderError, TEXT, flatten, rasterize,
-    svg_document, text,
+    Font, GUIDE, INK, Jitter, Rect, RenderError, TEXT, flatten, rasterize, svg_document, text,
 };
 
 use crate::template::{CELL_FONT_SIZE, CHECKSUM_FILL, UPSTREAM_CHECKSUM_FILL, WORDS};
@@ -184,115 +185,57 @@ pub struct Strip;
 
 impl Strip {
     /// Across, millimetres: upstream's band height.
-    pub const WIDTH: f64 = 51.0;
+    pub const WIDTH: f64 = Band::WIDTH;
     /// Along, millimetres: upstream's band length.
-    pub const LENGTH: f64 = 171.3;
+    pub const LENGTH: f64 = Band::LENGTH;
     /// Side of the corner fiducials.
-    pub const FIDUCIAL: f64 = 7.0;
-    /// Fiducial inset from the cut border: room for scissors to drift
-    /// without touching a fiducial.
-    pub const INSET: f64 = 4.0;
+    pub const FIDUCIAL: f64 = Band::FIDUCIAL;
+    /// Fiducial inset from the cut border.
+    pub const INSET: f64 = Band::INSET;
     /// Clearance kept free of other ink around fiducials and marks.
-    pub const QUIET: f64 = 2.0;
+    pub const QUIET: f64 = Band::QUIET;
     /// Rows of words.
     pub const ROWS: usize = WORDS;
-    /// Distance from the top to the first row's box; upstream's first
-    /// column, the box grown from 6.2 to 8 mm about its centre.
-    pub const ROWS_TOP: f64 = 24.9;
+    /// Distance from the top to the first row's box.
+    pub const ROWS_TOP: f64 = Band::ROWS_TOP;
     /// Row pitch: upstream's column pitch.
-    pub const ROW_PITCH: f64 = 10.29;
+    pub const ROW_PITCH: f64 = Band::ROW_PITCH;
     /// Box extent along the strip.
-    pub const BOX_ALONG: f64 = 8.0;
+    pub const BOX_ALONG: f64 = Band::ROW_HEIGHT;
     /// Upstream's box extent along the strip, as printed today.
     pub const UPSTREAM_BOX_ALONG: f64 = 6.6;
     /// Box extent across the strip: upstream's box pitch, borders inside.
-    pub const BOX_ACROSS: f64 = 6.5;
+    pub const BOX_ACROSS: f64 = Band::ROW_WIDTH / WORD_LEN as f64;
     /// Distance from the left cut border to the first box.
-    pub const BOXES_LEFT: f64 = 6.7;
+    pub const BOXES_LEFT: f64 = Band::ROW_LEFT;
     /// Side of the identity-code squares.
     pub const CODE_SQUARE: f64 = 3.0;
 
     /// Where the strip's fiducials, orientation mark and mark field are,
-    /// for finding it in a photo.
+    /// for finding it in a photo: a band's.
     pub fn geometry(&self) -> Geometry {
-        Geometry {
-            bounds: self.bounds(),
-            fiducials: self.fiducials(),
-            mark: self.mark(),
-            mark_slots: self.mark_slots(),
-        }
+        Band.geometry()
     }
 
     /// The whole strip.
     pub fn bounds(&self) -> Rect {
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            w: Strip::WIDTH,
-            h: Strip::LENGTH,
-        }
+        Band.bounds()
     }
 
     /// The four fiducials: top-left, top-right, bottom-left, bottom-right.
     pub fn fiducials(&self) -> [Rect; 4] {
-        let far_x = Strip::WIDTH - Strip::INSET - Strip::FIDUCIAL;
-        let far_y = Strip::LENGTH - Strip::INSET - Strip::FIDUCIAL;
-        let at = |x, y| Rect {
-            x,
-            y,
-            w: Strip::FIDUCIAL,
-            h: Strip::FIDUCIAL,
-        };
-        [
-            at(Strip::INSET, Strip::INSET),
-            at(far_x, Strip::INSET),
-            at(Strip::INSET, far_y),
-            at(far_x, far_y),
-        ]
+        Band.fiducials()
     }
 
     /// The orientation mark beside the top-left fiducial.
     pub fn mark(&self) -> Rect {
-        Rect {
-            x: 15.5,
-            y: 5.5,
-            w: 4.0,
-            h: 4.0,
-        }
+        Band.mark()
     }
 
-    /// The sixteen mark-field slots: eight between the orientation
-    /// mark and the top-right fiducial, eight between the bottom
-    /// fiducials, left to right, [`Strip::QUIET`] clear of the dark
-    /// squares flanking them. Slot `i` carries bit `i` of the printed
-    /// field; docs/marks.md records the convention.
+    /// The sixteen mark-field slots; slot `i` carries bit `i` of the
+    /// printed field. docs/marks.md records the convention.
     pub fn mark_slots(&self) -> [Rect; 16] {
-        let side = 1.6;
-        let row = |from: f64, to: f64, centre: f64, i: usize| Rect {
-            x: from + (to - from - side) / 7.0 * i as f64,
-            y: centre - side / 2.0,
-            w: side,
-            h: side,
-        };
-        let mark = self.mark();
-        let [tl, tr, bl, br] = self.fiducials();
-        std::array::from_fn(|i| {
-            if i < 8 {
-                row(
-                    mark.x + mark.w + Strip::QUIET,
-                    tr.x - Strip::QUIET - side,
-                    tl.y + tl.h / 2.0,
-                    i,
-                )
-            } else {
-                row(
-                    bl.x + bl.w + Strip::QUIET,
-                    br.x - Strip::QUIET - side,
-                    bl.y + bl.h / 2.0,
-                    i - 8,
-                )
-            }
-        })
+        Band.mark_slots()
     }
 
     /// The six identity-code positions, left to right, below the rows.
@@ -323,20 +266,17 @@ impl Strip {
 
     /// Centre of the row number left of the boxes.
     pub fn label_center(&self, word_index: usize) -> (f64, f64) {
-        (
-            Strip::BOXES_LEFT / 2.0,
-            Strip::ROWS_TOP + Strip::ROW_PITCH * word_index as f64 + Strip::BOX_ALONG / 2.0,
-        )
+        Band.label_center(word_index)
     }
 
     /// Centre of the title.
     pub fn title_center(&self) -> (f64, f64) {
-        (Strip::WIDTH / 2.0 + 4.0, 17.5)
+        Band.title_center()
     }
 
     /// Centre of the hint.
     pub fn hint_center(&self) -> (f64, f64) {
-        (Strip::WIDTH / 2.0, 156.0)
+        Band.hint_center()
     }
 }
 
@@ -347,100 +287,37 @@ pub struct Sheet;
 
 impl Sheet {
     /// Left edge of every front band.
-    pub const BAND_X: f64 = 17.0;
+    pub const BAND_X: f64 = BandPage::BAND_X;
     /// Top of the first band.
-    pub const BAND_TOP: f64 = 35.8;
+    pub const BAND_TOP: f64 = BandPage::BAND_TOP;
     /// Band pitch down the page.
-    pub const BAND_PITCH: f64 = 58.2;
+    pub const BAND_PITCH: f64 = BandPage::BAND_PITCH;
 
     /// The band the strip in `slot` occupies on the front, page
     /// millimetres.
     pub fn band(&self, slot: usize) -> Rect {
-        Rect {
-            x: Sheet::BAND_X,
-            y: Sheet::BAND_TOP + Sheet::BAND_PITCH * slot as f64,
-            w: Strip::LENGTH,
-            h: Strip::WIDTH,
-        }
+        BandPage.band(slot)
     }
 
-    /// A point in a strip's reading frame on the front page: the strip is
-    /// laid on its side, title to the left, boxes read bottom to top.
+    /// A point in a strip's reading frame on the front page.
     pub fn to_page(&self, slot: usize, x: f64, y: f64) -> (f64, f64) {
-        let band = self.band(slot);
-        (band.x + y, band.y + band.h - x)
+        BandPage.to_page(slot, x, y)
     }
 
     /// A rectangle in a strip's reading frame on the front page.
     pub fn rect_to_page(&self, slot: usize, r: Rect) -> Rect {
-        let (x0, y1) = self.to_page(slot, r.x, r.y);
-        let (x1, y0) = self.to_page(slot, r.x + r.w, r.y + r.h);
-        Rect {
-            x: x0,
-            y: y0,
-            w: x1 - x0,
-            h: y1 - y0,
-        }
+        BandPage.rect_to_page(slot, r)
     }
 
     /// Where a rectangle of the front lands on the back after a long-edge
-    /// duplex flip: mirrored across the page's vertical centre line.
+    /// duplex flip.
     pub fn flipped(&self, r: Rect) -> Rect {
-        Rect {
-            x: PAGE.0 - r.x - r.w,
-            ..r
-        }
+        BandPage.flipped(r)
     }
 
-    /// The back panel of `slot`: upstream's date, wallet and owner boxes
-    /// and the recovery box, in the back page's own coordinates (already
-    /// mirrored, so it prints under its strip after the flip). Upstream's
-    /// panels run to within 0.3 mm of the strip's edge; these stop 0.7 mm
-    /// short so a slightly misregistered print still cuts clean.
+    /// The back panel of `slot`, in the back page's own coordinates.
     pub fn back_panel(&self, slot: usize) -> BackPanel {
-        let y = Sheet::BAND_TOP + Sheet::BAND_PITCH * slot as f64 + 9.6;
-        let h = 40.3;
-        let at = |x, w| Rect { x, y, w, h };
-        BackPanel {
-            date: at(26.4, 9.5),
-            wallet: at(41.2, 23.3),
-            owner: at(70.0, 23.0),
-            recovery: at(126.1, 40.9),
-            qr: Rect {
-                x: 131.2,
-                y: y + 5.2,
-                w: 30.7,
-                h: 30.7,
-            },
-            title_x: 120.4,
-            url_x: 171.8,
-        }
-    }
-}
-
-/// One strip's back: upstream's boxes, page millimetres.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct BackPanel {
-    /// `Date: __/__/__`.
-    pub date: Rect,
-    /// `Wallet:`.
-    pub wallet: Rect,
-    /// `Owner:`.
-    pub owner: Rect,
-    /// The recovery box holding the QR.
-    pub recovery: Rect,
-    /// The QR itself.
-    pub qr: Rect,
-    /// Centre line of the rotated `Recovery` title.
-    pub title_x: f64,
-    /// Centre line of the rotated URL.
-    pub url_x: f64,
-}
-
-impl BackPanel {
-    /// Every rectangle of the panel.
-    pub fn rects(&self) -> [Rect; 5] {
-        [self.date, self.wallet, self.owner, self.recovery, self.qr]
+        BandPage.back_panel(slot)
     }
 }
 
@@ -565,13 +442,6 @@ impl<'a> Fill<'a> {
     }
 }
 
-fn rect(s: &mut String, r: Rect, style: &str) {
-    s.push_str(&format!(
-        "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" {style}/>\n",
-        r.x, r.y, r.w, r.h
-    ));
-}
-
 /// The SVG elements of one strip in its reading frame, blank or with
 /// `fill`'s symbols for its kind, without the `<svg>` wrapper.
 pub fn strip_group(kind: StripKind, fill: Option<&Fill<'_>>, rng_seed: u64) -> String {
@@ -585,41 +455,15 @@ pub fn strip_group_with(
     rng_seed: u64,
     aids: Aids,
 ) -> String {
-    let t = Strip;
     let mut s = String::new();
-    rect(&mut s, t.bounds(), "fill=\"#ffffff\"");
-    rect(
-        &mut s,
-        t.bounds(),
-        &format!(
-            "fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.25\" stroke-dasharray=\"1.5 1\""
-        ),
-    );
+    Band.draw_border(&mut s);
     match aids {
         Aids::Full => {
-            for f in t.fiducials() {
-                rect(&mut s, f, &format!("fill=\"{INK}\""));
-            }
-            rect(&mut s, t.mark(), &format!("fill=\"{INK}\""));
             let share = match kind {
                 StripKind::Seed => 0,
                 StripKind::Share(i) => i.number(),
             };
-            let field = crate::marks::encode(share);
-            for (i, slot) in t.mark_slots().iter().enumerate() {
-                // Empty slots print as outlined boxes: the field stays
-                // legible to a human, and the light outline sits with
-                // the paper at every ink threshold.
-                if field >> i & 1 == 1 {
-                    rect(&mut s, *slot, &format!("fill=\"{INK}\""));
-                } else {
-                    rect(
-                        &mut s,
-                        *slot,
-                        &format!("fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.2\""),
-                    );
-                }
-            }
+            Band.draw_aids(&mut s, crate::marks::encode(share));
         }
         Aids::None => {
             for after in [3, 6, 9] {
@@ -635,25 +479,14 @@ pub fn strip_group_with(
         Aids::Full => Layout::Aided,
         Aids::None => Layout::Upstream,
     };
-    let (tx, ty) = t.title_center();
     let (title, hint) = match aids {
         Aids::Full => (kind.title(), kind.hint().to_owned()),
         Aids::None => (kind.title().to_uppercase(), kind.hint().to_lowercase()),
     };
-    s.push_str(&text(tx, ty, 5.0, "middle", LABEL_FONT, INK, &title));
-    let (hx, hy) = t.hint_center();
-    s.push_str(&text(hx, hy, 3.2, "middle", LABEL_FONT, TEXT, &hint));
+    Band.draw_title(&mut s, &title);
+    Band.draw_hint(&mut s, &hint);
     for word_index in 0..Strip::ROWS {
-        let (lx, ly) = t.label_center(word_index);
-        s.push_str(&text(
-            lx,
-            ly,
-            2.6,
-            "middle",
-            LABEL_FONT,
-            TEXT,
-            &format!("{}.", word_index + 1),
-        ));
+        Band.draw_label(&mut s, word_index);
         for position in 0..WORD_LEN {
             let cell = layout.cell_rect(word_index, position);
             let style = match (aids, position < 2) {
@@ -743,18 +576,14 @@ pub fn front_svg(fill: Option<&Fill<'_>>) -> Result<String, RenderError> {
 
 /// The front with or without the scan aids.
 pub fn front_svg_with(fill: Option<&Fill<'_>>, aids: Aids) -> Result<String, RenderError> {
-    let sheet = Sheet;
     let mut body = format!(
         "<rect width=\"{}\" height=\"{}\" fill=\"#ffffff\"/>\n",
         PAGE.0, PAGE.1
     );
     for kind in StripKind::ALL {
-        let band = sheet.band(kind.slot());
-        body.push_str(&format!(
-            "<g transform=\"translate({:.2} {:.2}) rotate(-90)\">\n{}</g>\n",
-            band.x,
-            band.y + band.h,
-            strip_group_with(kind, fill, kind.slot() as u64, aids)
+        body.push_str(&BandPage.place(
+            kind.slot(),
+            &strip_group_with(kind, fill, kind.slot() as u64, aids),
         ));
     }
     flatten(&svg_document(PAGE.0, PAGE.1, &body), PAGE.0, PAGE.1)
@@ -763,72 +592,22 @@ pub fn front_svg_with(fill: Option<&Fill<'_>>, aids: Aids) -> Result<String, Ren
 /// The back page as a self-contained SVG: upstream's panels, laid out for
 /// a long-edge flip.
 pub fn back_svg() -> Result<String, RenderError> {
-    let sheet = Sheet;
     let mut body = format!(
         "<rect width=\"{}\" height=\"{}\" fill=\"#ffffff\"/>\n",
         PAGE.0, PAGE.1
     );
-    let dotted = format!(
-        "fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.25\" stroke-dasharray=\"0.6 0.6\""
-    );
+    let modules: Vec<Vec<bool>> = QR_GRID
+        .iter()
+        .map(|row| row.chars().map(|c| c == '#').collect())
+        .collect();
     for kind in StripKind::ALL {
-        let panel = sheet.back_panel(kind.slot());
-        for r in [panel.date, panel.wallet, panel.owner, panel.recovery] {
-            rect(&mut body, r, &dotted);
-        }
-        let rotated = |x: f64, cy: f64, size: f64, anchor: &str, color: &str, body_text: &str| {
-            format!(
-                "<g transform=\"translate({x:.2} {cy:.2}) rotate(-90)\">{}</g>\n",
-                text(0.0, 0.0, size, anchor, LABEL_FONT, color, body_text)
-            )
-        };
-        for (r, label) in [
-            (panel.date, "Date: __/__/__"),
-            (panel.wallet, "Wallet:"),
-            (panel.owner, "Owner:"),
-        ] {
-            body.push_str(&rotated(
-                r.x + 3.0,
-                r.y + r.h - 2.0,
-                2.8,
-                "start",
-                INK,
-                label,
-            ));
-        }
-        body.push_str(&rotated(
-            panel.title_x,
-            panel.recovery.y + panel.recovery.h / 2.0,
-            4.5,
-            "middle",
-            INK,
+        BandPage.draw_back_panel(
+            &mut body,
+            kind.slot(),
             "Recovery",
-        ));
-        body.push_str(&rotated(
-            panel.url_x,
-            panel.recovery.y + panel.recovery.h / 2.0,
-            2.8,
-            "middle",
-            INK,
             "v1.penlock.io/recover",
-        ));
-        let module = panel.qr.w / QR_MODULES as f64;
-        for (j, row) in QR_GRID.iter().enumerate() {
-            for (i, c) in row.chars().enumerate() {
-                if c == '#' {
-                    rect(
-                        &mut body,
-                        Rect {
-                            x: panel.qr.x + i as f64 * module,
-                            y: panel.qr.y + j as f64 * module,
-                            w: module + 0.01,
-                            h: module + 0.01,
-                        },
-                        &format!("fill=\"{INK}\""),
-                    );
-                }
-            }
-        }
+            &modules,
+        );
     }
     flatten(&svg_document(PAGE.0, PAGE.1, &body), PAGE.0, PAGE.1)
 }

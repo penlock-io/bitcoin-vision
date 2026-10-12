@@ -9,6 +9,7 @@
 
 #![deny(missing_docs)]
 
+pub mod band;
 pub mod frame;
 pub mod marks;
 #[cfg(feature = "print")]
