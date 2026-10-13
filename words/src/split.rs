@@ -16,9 +16,7 @@
 
 use image::{GrayImage, Luma, RgbImage};
 use imageproc::contrast::otsu_level;
-use imageproc::geometric_transformations::{
-    Border, Interpolation, Projection, rotate_about_center,
-};
+use imageproc::geometric_transformations::{Border, Interpolation, Projection, warp_into_with};
 use imageproc::region_labelling::{Connectivity, connected_components};
 
 use crate::detect::{Quad, clockwise};
@@ -235,6 +233,21 @@ fn ink_in_frame(
     quad: &Quad,
     frame: Frame,
 ) -> Result<(Frame, InkMask), EmptySplit> {
+    let (crop, valid) = level_frame(photo, quad, frame)?;
+    let mut ink = binarise_valid_accounted(&crop, valid);
+    strip_rules(&mut ink.pixels);
+    if ink.empty.is_none() && !ink.pixels.iter().flatten().any(|&p| p) {
+        ink.empty = Some(EmptySplit::NoInkAfterRules);
+    }
+    Ok((frame, ink))
+}
+
+/// Levels and crops the frame, interpolating only the pixels it keeps.
+fn level_frame(
+    photo: &RgbImage,
+    quad: &Quad,
+    frame: Frame,
+) -> Result<(GrayImage, Vec<Vec<bool>>), EmptySplit> {
     if ![frame.cx, frame.cy, frame.w, frame.h, frame.angle]
         .iter()
         .all(|n| n.is_finite())
@@ -261,16 +274,8 @@ fn ink_in_frame(
             }
         }
     }
-    // imageproc turns clockwise by a positive angle; PIL's positive
-    // angle is anticlockwise, and the frame counts as PIL does
     let (lcx, lcy) = (frame.cx - x0 as f32, frame.cy - y0 as f32);
-    let level = rotate_about_center(
-        &region,
-        frame.angle.to_radians(),
-        Interpolation::Bicubic,
-        Border::Constant(Luma([255])),
-    );
-    let level = recentre(&level, lcx, lcy, rw as f32 / 2.0, rh as f32 / 2.0);
+    let (mx, my) = (rw as f32 / 2.0, rh as f32 / 2.0);
     let (bx0, by0) = (
         (lcx - frame.w / 2.0).round() as i64,
         (lcy - frame.h / 2.0).round() as i64,
@@ -301,24 +306,51 @@ fn ink_in_frame(
             (dx + frame.w / 2.0, dy + frame.h / 2.0)
         })
         .collect();
+    // The turned square's pixel under crop pixel (x, y); None is paper.
+    let in_square = |x: u32, y: u32| {
+        let (lx, ly) = (bx0 + x as i64, by0 + y as i64);
+        (lx >= 0 && ly >= 0 && (lx as u32) < rw && (ly as u32) < rh)
+            .then_some((lx as u32, ly as u32))
+    };
+    let shifted = |lx: u32, ly: u32| recentred_pixel(lx, ly, lcx - mx, lcy - my, rw, rh);
+    // imageproc turns clockwise by a positive angle; PIL's positive
+    // angle is anticlockwise, and the frame counts as PIL does
+    let from_level = level_to_region((rw, rh), frame.angle);
+    let mut level = GrayImage::new(cw, ch);
+    warp_into_with(
+        &region,
+        |x, y| {
+            in_square(x as u32, y as u32)
+                .and_then(|(lx, ly)| shifted(lx, ly))
+                .map_or((0.0, 0.0), |(sx, sy)| from_level * (sx as f32, sy as f32))
+        },
+        Interpolation::Bicubic,
+        Border::Constant(Luma([255])),
+        &mut level,
+    );
     for y in 0..ch {
         for x in 0..cw {
-            let (lx, ly) = (bx0 + x as i64, by0 + y as i64);
-            if lx < 0 || ly < 0 || lx as u32 >= level.width() || ly as u32 >= level.height() {
+            let Some((lx, ly)) = in_square(x, y) else {
                 continue;
-            }
+            };
             if inside(&local, x as f32 + 0.5, y as f32 + 0.5) {
-                crop.put_pixel(x, y, *level.get_pixel(lx as u32, ly as u32));
-                valid[y as usize][x as usize] = is_photo(lx as u32, ly as u32);
+                if shifted(lx, ly).is_some() {
+                    crop.put_pixel(x, y, *level.get_pixel(x, y));
+                }
+                valid[y as usize][x as usize] = is_photo(lx, ly);
             }
         }
     }
-    let mut ink = binarise_valid_accounted(&crop, valid);
-    strip_rules(&mut ink.pixels);
-    if ink.empty.is_none() && !ink.pixels.iter().flatten().any(|&p| p) {
-        ink.empty = Some(EmptySplit::NoInkAfterRules);
-    }
-    Ok((frame, ink))
+    Ok((crop, valid))
+}
+
+/// The inverse projection imageproc uses to turn an image about its centre.
+fn level_to_region((width, height): (u32, u32), angle: f32) -> Projection {
+    let (mx, my) = (width as f32 / 2.0, height as f32 / 2.0);
+    (Projection::translate(mx, my)
+        * Projection::rotate(angle.to_radians())
+        * Projection::translate(-mx, -my))
+    .invert()
 }
 
 // Mirror imageproc's inverse rotation and our recentre lookup without
@@ -332,10 +364,7 @@ fn photo_sample_map(
     angle: f32,
 ) -> impl Fn(u32, u32) -> bool {
     let (mx, my) = (rw as f32 / 2.0, rh as f32 / 2.0);
-    let from_level = (Projection::translate(mx, my)
-        * Projection::rotate(angle.to_radians())
-        * Projection::translate(-mx, -my))
-    .invert();
+    let from_level = level_to_region((rw, rh), angle);
     move |lx, ly| {
         let Some((sx, sy)) = recentred_pixel(lx, ly, lcx - mx, lcy - my, rw, rh) else {
             return false;
@@ -377,26 +406,6 @@ fn recentred_pixel(x: u32, y: u32, dx: f32, dy: f32, w: u32, h: u32) -> Option<(
             sy.round().min(h as f32 - 1.0) as u32,
         )
     })
-}
-
-/// `rotate_about_center` turns about the image centre; the frame's
-/// centre is not there, so the turned image is shifted to put the
-/// frame's centre where it was, as PIL's `center=` does.
-fn recentre(level: &GrayImage, cx: f32, cy: f32, mx: f32, my: f32) -> GrayImage {
-    let (w, h) = level.dimensions();
-    let (dx, dy) = (cx - mx, cy - my);
-    if dx.abs() < 1e-3 && dy.abs() < 1e-3 {
-        return level.clone();
-    }
-    let mut out = GrayImage::from_pixel(w, h, Luma([255]));
-    for y in 0..h {
-        for x in 0..w {
-            if let Some((sx, sy)) = recentred_pixel(x, y, dx, dy, w, h) {
-                out.put_pixel(x, y, *level.get_pixel(sx, sy));
-            }
-        }
-    }
-    out
 }
 
 /// Point-in-polygon by the even-odd rule.
@@ -733,6 +742,7 @@ fn parts_of(frame: Frame, ink: InkMask, split: Split) -> Result<Vec<Quad>, Empty
 mod tests {
     use super::*;
     use image::Rgb;
+    use imageproc::geometric_transformations::rotate_about_center;
 
     fn rectangle(w: f32, h: f32, angle: f32) -> Quad {
         Quad(clockwise(
@@ -904,6 +914,219 @@ mod tests {
                 assert!(included > 100 && included < 300);
             }
         }
+    }
+
+    /// `rotate_about_center` turns about the image centre; the frame's
+    /// centre is not there, so the turned image is shifted to put the
+    /// frame's centre where it was, as PIL's `center=` does.
+    fn recentre(level: &GrayImage, cx: f32, cy: f32, mx: f32, my: f32) -> GrayImage {
+        let (w, h) = level.dimensions();
+        let (dx, dy) = (cx - mx, cy - my);
+        if dx.abs() < 1e-3 && dy.abs() < 1e-3 {
+            return level.clone();
+        }
+        let mut out = GrayImage::from_pixel(w, h, Luma([255]));
+        for y in 0..h {
+            for x in 0..w {
+                if let Some((sx, sy)) = recentred_pixel(x, y, dx, dy, w, h) {
+                    out.put_pixel(x, y, *level.get_pixel(sx, sy));
+                }
+            }
+        }
+        out
+    }
+
+    /// The old way: turn the whole square, recentre it, then cut the frame out.
+    fn level_frame_by_turning_the_square(
+        photo: &RgbImage,
+        quad: &Quad,
+        frame: Frame,
+    ) -> Result<(GrayImage, Vec<Vec<bool>>), EmptySplit> {
+        if ![frame.cx, frame.cy, frame.w, frame.h, frame.angle]
+            .iter()
+            .all(|n| n.is_finite())
+            || frame.w < 2.0
+            || frame.h < 2.0
+        {
+            return Err(EmptySplit::NoFrame);
+        }
+        let r = (frame.w * frame.w + frame.h * frame.h).sqrt() / 2.0 + 2.0;
+        let (x0, y0) = ((frame.cx - r).floor() as i64, (frame.cy - r).floor() as i64);
+        let (x1, y1) = (
+            (frame.cx + r).ceil() as i64 + 1,
+            (frame.cy + r).ceil() as i64 + 1,
+        );
+        let (rw, rh) = ((x1 - x0) as u32, (y1 - y0) as u32);
+        let region = GrayImage::from_fn(rw, rh, |x, y| {
+            let (px, py) = (x0 + x as i64, y0 + y as i64);
+            if px >= 0 && py >= 0 && (px as u32) < photo.width() && (py as u32) < photo.height() {
+                let p = photo.get_pixel(px as u32, py as u32).0;
+                let l = 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32;
+                Luma([l.round() as u8])
+            } else {
+                Luma([255])
+            }
+        });
+        let (lcx, lcy) = (frame.cx - x0 as f32, frame.cy - y0 as f32);
+        let level = rotate_about_center(
+            &region,
+            frame.angle.to_radians(),
+            Interpolation::Bicubic,
+            Border::Constant(Luma([255])),
+        );
+        let level = recentre(&level, lcx, lcy, rw as f32 / 2.0, rh as f32 / 2.0);
+        let (bx0, by0) = (
+            (lcx - frame.w / 2.0).round() as i64,
+            (lcy - frame.h / 2.0).round() as i64,
+        );
+        let (bx1, by1) = (
+            (lcx + frame.w / 2.0).round() as i64,
+            (lcy + frame.h / 2.0).round() as i64,
+        );
+        let (cw, ch) = ((bx1 - bx0).max(0) as u32, (by1 - by0).max(0) as u32);
+        if cw < 2 || ch < 2 {
+            return Err(EmptySplit::NoFrame);
+        }
+        let mut crop = GrayImage::from_pixel(cw, ch, Luma([255]));
+        let mut valid = vec![vec![false; cw as usize]; ch as usize];
+        let is_photo = photo_sample_map(
+            photo.dimensions(),
+            (x0, y0),
+            (rw, rh),
+            (lcx, lcy),
+            frame.angle,
+        );
+        let local: Vec<(f32, f32)> = quad
+            .0
+            .iter()
+            .map(|&(px, py)| {
+                let (dx, dy) = turn(px - frame.cx, py - frame.cy, -frame.angle);
+                (dx + frame.w / 2.0, dy + frame.h / 2.0)
+            })
+            .collect();
+        for y in 0..ch {
+            for x in 0..cw {
+                let (lx, ly) = (bx0 + x as i64, by0 + y as i64);
+                if lx < 0 || ly < 0 || lx as u32 >= level.width() || ly as u32 >= level.height() {
+                    continue;
+                }
+                if inside(&local, x as f32 + 0.5, y as f32 + 0.5) {
+                    crop.put_pixel(x, y, *level.get_pixel(lx as u32, ly as u32));
+                    valid[y as usize][x as usize] = is_photo(lx as u32, ly as u32);
+                }
+            }
+        }
+        Ok((crop, valid))
+    }
+
+    #[test]
+    fn levelling_only_the_frame_matches_turning_the_whole_square() {
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+        let mut rng = StdRng::seed_from_u64(7);
+        let photo = texture();
+        let mut compared = 0;
+        for case in 0..400 {
+            let (w, h) = (rng.random_range(1.0..160.0), rng.random_range(1.0..60.0));
+            // Centres past every photo edge; a quarter on whole or half pixels.
+            let (mut cx, mut cy) = (
+                rng.random_range(-30.0..270.0),
+                rng.random_range(-30.0..210.0),
+            );
+            if case % 4 == 0 {
+                (cx, cy) = ((cx * 2.0f32).round() / 2.0, (cy * 2.0f32).round() / 2.0);
+            }
+            let angle = match case % 5 {
+                0 => 0.0,
+                1 => 90.0,
+                _ => rng.random_range(-90.0..90.0),
+            };
+            let corners = [(-w, -h), (w, -h), (w, h), (-w, h)].map(|(x, y)| {
+                let (dx, dy) = turn(x / 2.0, y / 2.0, angle);
+                (cx + dx, cy + dy)
+            });
+            let quad = Quad(clockwise(corners));
+            // The polygon's own frame, and a looser one with paper inside the crop.
+            let own = frame_of(&quad);
+            let loose = Frame {
+                w: own.w + 6.0,
+                h: own.h + 4.0,
+                ..own
+            };
+            for frame in [own, loose] {
+                compared += usize::from(levels_match(&photo, &quad, frame));
+            }
+        }
+        assert!(compared > 600, "{compared} crops compared");
+    }
+
+    fn texture() -> RgbImage {
+        RgbImage::from_fn(240, 180, |x, y| {
+            let v = |k: u32| ((x * k + y * (k + 13) + (x * y) % 37) % 256) as u8;
+            Rgb([v(3), v(7), v(11)])
+        })
+    }
+
+    /// Both ways agree pixel for pixel; true when there was a crop to compare.
+    fn levels_match(photo: &RgbImage, quad: &Quad, frame: Frame) -> bool {
+        let expected = level_frame_by_turning_the_square(photo, quad, frame);
+        let actual = level_frame(photo, quad, frame);
+        match (&expected, &actual) {
+            (Ok((ec, ev)), Ok((ac, av))) => {
+                assert_eq!(ec, ac, "pixels {frame:?}");
+                assert_eq!(ev, av, "photo samples {frame:?}");
+                true
+            }
+            _ => {
+                assert_eq!(expected, actual, "{frame:?}");
+                false
+            }
+        }
+    }
+
+    /// The shift `recentre` would apply to this frame.
+    fn centre_shift(frame: Frame) -> (f32, f32) {
+        let r = (frame.w * frame.w + frame.h * frame.h).sqrt() / 2.0 + 2.0;
+        let (x0, y0) = ((frame.cx - r).floor() as i64, (frame.cy - r).floor() as i64);
+        let (x1, y1) = (
+            (frame.cx + r).ceil() as i64 + 1,
+            (frame.cy + r).ceil() as i64 + 1,
+        );
+        let (rw, rh) = ((x1 - x0) as u32, (y1 - y0) as u32);
+        (
+            frame.cx - x0 as f32 - rw as f32 / 2.0,
+            frame.cy - y0 as f32 - rh as f32 / 2.0,
+        )
+    }
+
+    #[test]
+    fn levelling_only_the_frame_matches_where_the_centre_needs_no_shift() {
+        // A near-zero shift is rare, so search frame sizes for it.
+        let photo = texture();
+        let mut unshifted = 0;
+        for k in 0..20_000 {
+            let (w, h) = (20.0 + k as f32 * 0.0037, 9.0);
+            let r = (w * w + h * h).sqrt() / 2.0 + 2.0;
+            let below = (2.0 * r).ceil() - 2.0 * r;
+            let (cx, cy) = (100.0 + below + r, 70.0 + below + r);
+            let frame = Frame {
+                cx,
+                cy,
+                w,
+                h,
+                angle: 17.0,
+            };
+            let (dx, dy) = centre_shift(frame);
+            if dx.abs() >= 1e-3 || dy.abs() >= 1e-3 {
+                continue;
+            }
+            let corners = [(-w, -h), (w, -h), (w, h), (-w, h)].map(|(x, y)| {
+                let (tx, ty) = turn(x / 2.0, y / 2.0, frame.angle);
+                (cx + tx, cy + ty)
+            });
+            assert!(levels_match(&photo, &Quad(clockwise(corners)), frame));
+            unshifted += 1;
+        }
+        assert!(unshifted >= 3, "{unshifted} unshifted frames found");
     }
 
     #[test]
