@@ -462,3 +462,49 @@ pub fn sign_review(review: Arc<Review>, words: Vec<String>) -> Result<Vec<u8>, V
     }
     Ok(psbt.serialize())
 }
+
+/// Most addresses asked for at once.
+pub const ADDRESS_PAGE: u32 = 100;
+
+/// Receive addresses `start..start + count` of a saved wallet, in order.
+/// Nothing here knows which are used: the wallet tracking the chain does.
+#[uniffi::export]
+pub fn receive_addresses(descriptor: String, start: u32, count: u32) -> Result<Vec<String>, VisionError> {
+    if count > ADDRESS_PAGE {
+        return Err(refuse(format!("at most {ADDRESS_PAGE} addresses at once")));
+    }
+    let saved = Saved::parse(&descriptor)?;
+    (start..start.saturating_add(count))
+        .map(|i| {
+            let at = saved.chains[0]
+                .at_derivation_index(i)
+                .map_err(|e| refuse(e.to_string()))?;
+            at.address(Network::Bitcoin)
+                .map(|a| a.to_string())
+                .map_err(|e| refuse(e.to_string()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod address_tests {
+    use super::*;
+
+    #[test]
+    fn first_receive_addresses_match_bip86() {
+        let mut words = vec!["abandon".to_owned(); 11];
+        words.push("about".to_owned());
+        let wallet = crate::descriptor(words).unwrap();
+        // BIP86's own test vectors for this phrase: m/86'/0'/0'/0/0 and /0/1.
+        assert_eq!(
+            receive_addresses(wallet.descriptor.clone(), 0, 2).unwrap(),
+            [
+                "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
+                "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh",
+            ]
+        );
+        assert_eq!(receive_addresses(wallet.descriptor.clone(), 1, 1).unwrap()[0],
+            "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh");
+        assert!(receive_addresses(wallet.descriptor, 0, ADDRESS_PAGE + 1).is_err());
+    }
+}

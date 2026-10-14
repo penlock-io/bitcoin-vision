@@ -56,7 +56,7 @@ pub use strip_progress::{
     StripProgressEvent, StripProgressObserver, StripProgressUpdate, StripWorkPhase,
 };
 
-pub use psbt::{FEE_CEILING, OutputLine, Review, review_psbt, sign_review};
+pub use psbt::{ADDRESS_PAGE, FEE_CEILING, OutputLine, Review, receive_addresses, review_psbt, sign_review};
 pub use qr::{PsbtQrDecoder, PsbtQrEncoder, QrModules, QrScan, psbt_qr_parts, qr_modules};
 
 uniffi::setup_scaffolding!();

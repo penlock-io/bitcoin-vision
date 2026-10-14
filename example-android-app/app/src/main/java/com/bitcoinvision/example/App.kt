@@ -150,6 +150,7 @@ fun App(
                     nav.navigate(scanRoute("strips/scan", id))
                 },
                 onConnect = { nav.navigate("wallet/$id/connect") },
+                onReceive = { nav.navigate("wallet/$id/receive") },
                 onBackUp = {
                     if (wallets.key(id) == null) {
                         nav.navigate(loadRoute(id, "backup"))
@@ -166,6 +167,10 @@ fun App(
                 onCancel = { creation.cancel(); nav.popBackStack("add", false) },
                 onComplete = { wallets.completeNew(creation)?.let(open) },
             )
+        }
+        composable("wallet/{id}/receive") { entry ->
+            val id = entry.arguments?.getString("id") ?: return@composable
+            ReceiveScreen(wallets, id, onBack = { nav.popBackStack() })
         }
         composable("wallet/{id}/connect") { entry ->
             val id = entry.arguments?.getString("id") ?: return@composable
@@ -197,7 +202,6 @@ fun App(
         composable("sign/pick") {
             SignPickScreen(
                 wallets,
-                onScanQr = { nav.navigate("sign/scan") },
                 onReviewed = { reviewIncoming() },
                 onBack = { nav.popBackStack() },
             )
@@ -245,7 +249,7 @@ fun App(
             val task = entry.task()
             ReviewScreen(
                 sheet,
-                action = if (purpose == ADD) "Add wallet" else "Load key",
+                action = if (purpose == ADD) "Add wallet" else "Use these words",
                 onAccept = {
                     sheet.confirmed()?.let { accept(purpose, task, it, KeySource.WrittenPhrase) }
                 },

@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -74,8 +75,14 @@ import java.util.concurrent.Executors
  * as the fallback.
  */
 @Composable
-fun QrScanScreen(title: String, onPsbt: (ByteArray) -> Unit, onExit: () -> Unit) {
-    CameraPermissionGate(onExit) {
+fun QrScanScreen(
+    title: String,
+    onPsbt: (ByteArray) -> Unit,
+    onExit: () -> Unit,
+    /** Other ways in, under the camera; offered too when the camera is refused. */
+    alternatives: @Composable ColumnScope.() -> Unit = {},
+) {
+    CameraPermissionGate(onExit, alternatives) {
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
         val main = remember(context) { ContextCompat.getMainExecutor(context) }
@@ -135,7 +142,14 @@ fun QrScanScreen(title: String, onPsbt: (ByteArray) -> Unit, onExit: () -> Unit)
                 Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
             }
             session.error?.let { Text(it, color = Color.White, modifier = Modifier.align(Alignment.Center)) }
-            ScanRing(state, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(32.dp))
+            Column(
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ScanRing(state, Modifier)
+                alternatives()
+            }
         }
     }
 }
@@ -170,7 +184,11 @@ private fun ScanRing(state: QrScanState, modifier: Modifier) {
 // The same gate CameraCapture carries inline; that file is mid-change, so
 // the two fold together once it lands.
 @Composable
-private fun CameraPermissionGate(onExit: () -> Unit, content: @Composable () -> Unit) {
+private fun CameraPermissionGate(
+    onExit: () -> Unit,
+    alternatives: @Composable ColumnScope.() -> Unit,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val check = {
@@ -200,6 +218,7 @@ private fun CameraPermissionGate(onExit: () -> Unit, content: @Composable () -> 
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
             )
         }) { Text("Open app settings") }
+        alternatives()
         TextButton(onClick = onExit) { Text("Back") }
     }
 }

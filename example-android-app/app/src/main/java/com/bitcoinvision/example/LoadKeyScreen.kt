@@ -25,15 +25,14 @@ fun LoadKeyScreen(
         LaunchedEffect(Unit) { onBack() }
         return
     }
-    WalletPage("Load key", onBack, titleTag = "load-title") {
+    WalletPage("Scan your words", onBack, titleTag = "load-title") {
         Text(wallet.name, style = MaterialTheme.typography.titleLarge)
-        Text(wallet.fingerprint, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PlexMono))
-        Text("Key not loaded", modifier = Modifier.testTag("key-status"))
+        Text("Scan your words to send", modifier = Modifier.testTag("key-status"))
         Text(
             when (task) {
-                "sign" -> "After loading, you return to the review and tap Sign."
-                "backup" -> "After loading, you write a new set of three strips."
-                else -> "From your written phrase or any two strips."
+                "sign" -> "After scanning, you go back to the transaction and tap Sign."
+                "backup" -> "After scanning, you write a new set of three strips."
+                else -> "From your 12 written words or any two strips."
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.testTag("load-purpose"),

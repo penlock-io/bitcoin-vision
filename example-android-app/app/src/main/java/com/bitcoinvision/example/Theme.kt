@@ -30,7 +30,7 @@ val PlexSans = FontFamily(
     ),
 )
 
-// Paper, ink, graphite and one pen: the app is the digital half of a
+// Paper, ink and graphite, and no colour at all: the app is the digital half of a
 // paper worksheet, so it keeps the worksheet's colours rather than
 // the phone's wallpaper's.
 private val Paper = Color(0xFFFFFFFF)
@@ -38,9 +38,9 @@ private val PaperShade = Color(0xFFF1F1EF)
 private val Ink = Color(0xFF17181A)
 private val Graphite = Color(0xFF5C5F63)
 private val Rule = Color(0xFFD9DAD6)
-private val Pen = Color(0xFF2447A0)
-private val PenTint = Color(0xFFDCE4F7)
-private val PenInk = Color(0xFF14295E)
+private val Pen = Color(0xFF17181A)
+private val PenTint = Color(0xFFE3E3E0)
+private val PenInk = Color(0xFF17181A)
 
 internal val Light = lightColorScheme(
     primary = Pen,
@@ -68,19 +68,23 @@ internal val Light = lightColorScheme(
     surfaceContainerHighest = Color(0xFFE3E3E0),
     outline = Color(0xFF73767A),
     outlineVariant = Rule,
+    error = Ink,
+    onError = Paper,
+    errorContainer = PaperShade,
+    onErrorContainer = Ink,
 )
 
 private val Night = Color(0xFF131315)
 private val NightShade = Color(0xFF1C1C1F)
 private val Chalk = Color(0xFFECECEA)
 private val Ash = Color(0xFFB0B2B6)
-private val PenLight = Color(0xFF9DB4F2)
+private val PenLight = Color(0xFFECECEA)
 
 internal val Dark = darkColorScheme(
     primary = PenLight,
-    onPrimary = Color(0xFF0E1F4D),
-    primaryContainer = Color(0xFF1F3574),
-    onPrimaryContainer = PenTint,
+    onPrimary = Night,
+    primaryContainer = Color(0xFF3A3B3F),
+    onPrimaryContainer = Chalk,
     secondary = Ash,
     onSecondary = Night,
     secondaryContainer = Color(0xFF2C2D31),
@@ -102,6 +106,10 @@ internal val Dark = darkColorScheme(
     surfaceContainerHighest = Color(0xFF2C2D31),
     outline = Color(0xFF8A8D91),
     outlineVariant = Color(0xFF34363A),
+    error = Chalk,
+    onError = Night,
+    errorContainer = Color(0xFF2C2D31),
+    onErrorContainer = Chalk,
 )
 
 /** White camera instructions retain contrast even over a white preview. */

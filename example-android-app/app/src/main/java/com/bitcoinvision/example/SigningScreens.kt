@@ -6,6 +6,8 @@ import android.util.Base64
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -52,11 +54,10 @@ fun totalLeaving(amounts: List<ULong>, fee: ULong): ULong = amounts.fold(fee) { 
 /** Payload bytes per animated frame: what frostsnap shows Sparrow, comfortably read at arm's length. */
 const val QR_FRAGMENT_BYTES = 400u
 
-/** The PSBT to sign, off Sparrow's screen or from the phone's files. */
+/** The PSBT to sign: the camera, open on Sparrow's screen, with the phone's files beneath it. */
 @Composable
 fun SignPickScreen(
     wallets: WalletsViewModel,
-    onScanQr: () -> Unit,
     onReviewed: () -> Unit,
     onBack: () -> Unit,
     fixtureRoute: Boolean = BuildConfig.DEBUG && onEmulator,
@@ -69,37 +70,37 @@ fun SignPickScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { context.contentResolver.openInputStream(it)?.use { s -> s.readBytes() } }?.let(take)
     }
-    BackHandler(onBack = onBack)
-    TaskPage("Sign a transaction", onBack, actions = {
-        Button(onClick = onScanQr, modifier = Modifier.fillMaxWidth().testTag("scan-qr")) { Text("Scan QR code") }
-        OutlinedButton(
+    QrScanScreen("Show Sparrow's QR code", onPsbt = take, onExit = onBack) {
+        Text(
+            "First make the transaction in Sparrow, then scan its QR code.",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.background(CameraScrim).padding(horizontal = 12.dp, vertical = 8.dp)
+                .testTag("send-hint"),
+        )
+        Button(
             onClick = { picker.launch(arrayOf("*/*")) },
             modifier = Modifier.fillMaxWidth().testTag("choose-file"),
         ) { Text("Choose transaction file") }
-    }) {
-        SigningBody {
-            Text("Show Sparrow's QR code to the camera.", style = MaterialTheme.typography.titleLarge)
-            Text("Review first, then sign. Nothing is broadcast.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // The directory this reads is one only adb can fill, so it is
-            // of no use on a phone; the click-throughs run on the emulator.
-            if (fixtureRoute) {
-                var noFixture by remember { mutableStateOf(false) }
-                TextButton(
-                    onClick = {
-                        val psbt = latestPsbt(context)
-                        noFixture = psbt == null
-                        psbt?.let(take)
-                    },
-                    modifier = Modifier.testTag("from-file"),
-                ) { Text("From file") }
-                if (noFixture) {
-                    Text(
-                        "No transaction in the app's files/psbts directory.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("from-file-empty"),
-                    )
-                }
+        // The directory this reads is one only adb can fill, so it is
+        // of no use on a phone; the click-throughs run on the emulator.
+        if (fixtureRoute) {
+            var noFixture by remember { mutableStateOf(false) }
+            TextButton(
+                onClick = {
+                    val psbt = latestPsbt(context)
+                    noFixture = psbt == null
+                    psbt?.let(take)
+                },
+                modifier = Modifier.testTag("from-file"),
+            ) { Text("From file") }
+            if (noFixture) {
+                Text(
+                    "No transaction in the app's files/psbts directory.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("from-file-empty"),
+                )
             }
         }
     }
@@ -162,13 +163,13 @@ fun ReviewPsbtScreen(
                     ) { Text("Sign transaction") }
                 } else {
                     Text(
-                        "Load the key, then sign.",
+                        "Scan your words, then sign.",
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("key-missing"),
                     )
                     Button(
                         onClick = { onLoadKey(signing.walletId) },
                         modifier = Modifier.fillMaxWidth().testTag("load-key"),
-                    ) { Text("Load key") }
+                    ) { Text("Scan your words") }
                 }
                 TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth().testTag("dismiss")) {
                     Text("Dismiss transaction")

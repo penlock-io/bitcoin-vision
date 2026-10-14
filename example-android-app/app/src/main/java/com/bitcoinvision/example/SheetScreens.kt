@@ -74,6 +74,8 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -91,16 +93,20 @@ import uniffi.bitcoin_vision_mobile.listWords
 import java.util.Locale
 
 // The verdict colours: the same on both themes, since they carry
-// meaning the theme must not restyle.
-private val Accepted = Color(0xFF2E7D32)
-private val Uncertain = Color(0xFFF9A825)
-private val LeftOut = Color(0xFF9E9E9E)
-private val LowConfidence = Color(0xFFB3261E)
+// meaning the theme must not restyle. One mid grey reads on paper and
+// on night alike; the number beside each word carries the verdict.
+private val Accepted = Color(0xFF808080)
+private val Uncertain = Color(0xFF808080)
+private val LeftOut = Color(0xFFB0B2B6)
+private val LowConfidence = Color(0xFF808080)
+
+/** Below this the review marks a word with a warning sign, since grey alone cannot. */
+internal const val UNSURE_BELOW = 0.85f
 
 /** One palette for row confidence and the corresponding polygon on the photo. */
 internal fun confidenceColour(entry: Entry): Color = when {
     entry.modelConfidence == null -> LeftOut
-    entry.modelConfidence!! >= 0.85f -> Accepted
+    entry.modelConfidence!! >= UNSURE_BELOW -> Accepted
     entry.modelConfidence!! >= 0.5f -> Uncertain
     else -> LowConfidence
 }
@@ -732,23 +738,31 @@ internal fun WordRow(
             modifier = Modifier.widthIn(min = 32.dp).testTag("row-$number-label"),
         )
         Column(Modifier.weight(1f)) {
-            Text(
-                entry.word,
-                style = MaterialTheme.typography.titleLarge,
-                fontFamily = PlexMono,
-                modifier = Modifier.testTag("row-$number-word"),
-            )
             val confidence = entry.modelConfidence
             val confidenceText = confidence?.let {
                 "Model confidence ${String.format(Locale.ROOT, "%.1f%%", it * 100)}"
             } ?: "Model confidence unavailable"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    entry.word,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = PlexMono,
+                    modifier = Modifier.weight(1f).testTag("row-$number-word"),
+                )
+                Text(
+                    confidence?.let { "${if (it < UNSURE_BELOW) "⚠️ " else ""}${(it * 100).toInt()}%" } ?: "?",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = confidenceColour(entry),
+                    modifier = Modifier.clearAndSetSemantics { },
+                )
+            }
             LinearProgressIndicator(
                 progress = { confidence ?: 0f },
                 color = confidenceColour(entry),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     .testTag("confidence-$number").semantics { contentDescription = confidenceText },
             )
-            Text(confidenceText, style = MaterialTheme.typography.labelSmall)
             if (showCrop) {
                 val source = entry.source
                 if (source != null) {
