@@ -168,7 +168,11 @@ impl progress::Observer for Callback {
         if !self.attached.load(Ordering::Relaxed) {
             return;
         }
-        if !matches!(event, progress::native::Event::Finished { .. }) {
+        // a box view is the regions alone, and the form is not one of them
+        if !matches!(
+            event,
+            progress::native::Event::Finished { .. } | progress::native::Event::Form { .. }
+        ) {
             self.emit(event.into());
         }
     }
@@ -202,7 +206,9 @@ impl From<progress::native::Event> for BoxProgressUpdate {
                 parents,
             },
             progress::native::Event::Removed { id } => Self::Removed { id },
-            progress::native::Event::Finished { .. } => unreachable!("box completion comes from the result"),
+            progress::native::Event::Finished { .. } | progress::native::Event::Form { .. } => {
+                unreachable!("the box observer filters these out")
+            }
             progress::native::Event::Failed => Self::Failed,
         }
     }
@@ -235,12 +241,7 @@ mod tests {
             height: 80,
             boxes: vec![bitcoin_vision_words::review::ReviewBox {
                 id: 7,
-                quad: [
-                    (1.25, 2.5),
-                    (30., 1.),
-                    (32., 12.),
-                    (2., 13.),
-                ],
+                quad: [(1.25, 2.5), (30., 1.), (32., 12.), (2., 13.)],
             }],
         }
     }

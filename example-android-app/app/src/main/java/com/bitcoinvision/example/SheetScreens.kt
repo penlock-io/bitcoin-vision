@@ -390,6 +390,12 @@ fun ReviewScreen(
                 Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     run {
                         Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (scan.layout == Layout.WORD_SHEET) "Read from a recovery phrase card"
+                            else "Read as a page of words",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.testTag("scan-source"),
+                        )
                         PhotoWithBoxes(
                             photo, scan.width.toInt(), scan.height.toInt(),
                             draft.entries, draft.reviewLeftOut, viewModel.highlighted,

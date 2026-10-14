@@ -20,12 +20,29 @@ pub(crate) mod native {
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum Event {
-        Photo { width: u32, height: u32 },
-        Work { phase: Phase, completed: u32, total: Option<u32> },
+        Photo {
+            width: u32,
+            height: u32,
+        },
+        Work {
+            phase: Phase,
+            completed: u32,
+            total: Option<u32>,
+        },
+        Form {
+            outline: [(f32, f32); 4],
+        },
         Region(Region),
-        Replaced { region: Region, parents: Vec<u32> },
-        Removed { id: u32 },
-        Finished { regions: Vec<FinalRegion> },
+        Replaced {
+            region: Region,
+            parents: Vec<u32>,
+        },
+        Removed {
+            id: u32,
+        },
+        Finished {
+            regions: Vec<FinalRegion>,
+        },
         Failed,
     }
 
@@ -46,7 +63,11 @@ pub(crate) mod native {
     }
 
     pub fn work(observer: Option<&dyn Observer>, phase: Phase, completed: u32, total: Option<u32>) {
-        emit(observer, || Event::Work { phase, completed, total });
+        emit(observer, || Event::Work {
+            phase,
+            completed,
+            total,
+        });
     }
 }
 
@@ -121,6 +142,13 @@ pub enum ScanProgressUpdate {
         completed: u32,
         /// Fixed stage total, or unknown; zero is allowed.
         total: Option<u32>,
+    },
+    /// A recovery phrase card was found by its printed marks: the regions
+    /// that follow are its fields, not words found by the detector.
+    Form {
+        /// Eight coordinates: the card's clockwise x/y corners in canonical
+        /// full-image pixels.
+        corners: Vec<f32>,
     },
     /// Insert or update all state for this region.
     Region {
@@ -375,6 +403,7 @@ pub(crate) fn forward(
                     completed,
                     total,
                 },
+                Delta::Form { outline } => core::Event::Form { outline },
                 Delta::Region { id, region: r } => core::Event::Region(region(id, r)),
                 Delta::Replaced {
                     id,
@@ -397,11 +426,7 @@ impl From<core::Region> for ScanRegion {
     fn from(region: core::Region) -> Self {
         Self {
             id: region.id,
-            corners: region
-                .quad
-                .into_iter()
-                .flat_map(|(x, y)| [x, y])
-                .collect(),
+            corners: region.quad.into_iter().flat_map(|(x, y)| [x, y]).collect(),
             state: match region.state {
                 core::RegionState::Found => ScanRegionState::Found,
                 core::RegionState::Reading => ScanRegionState::Reading,
@@ -431,6 +456,9 @@ impl From<core::Event> for ScanProgressUpdate {
                 },
                 completed,
                 total,
+            },
+            core::Event::Form { outline } => Self::Form {
+                corners: outline.into_iter().flat_map(|(x, y)| [x, y]).collect(),
             },
             core::Event::Region(region) => Self::Region {
                 region: region.into(),
@@ -534,11 +562,24 @@ impl ProgressCallbackProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::native::Observer;
+    use super::*;
     use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
     use std::time::Duration;
+
+    #[test]
+    fn a_card_reaches_the_app_as_its_outline() {
+        let update = ScanProgressUpdate::from(core::Event::Form {
+            outline: [(1.0, 2.0), (3.0, 2.0), (3.0, 9.0), (1.0, 9.0)],
+        });
+        assert_eq!(
+            update,
+            ScanProgressUpdate::Form {
+                corners: vec![1.0, 2.0, 3.0, 2.0, 3.0, 9.0, 1.0, 9.0]
+            }
+        );
+    }
 
     #[test]
     fn outer_result_emits_one_terminal_for_errors_at_any_stage_and_success_after_packing() {

@@ -40,6 +40,19 @@ internal fun ScanProgressPhoto(
             val fit = fitPhoto(PhotoFrame(photo.width, photo.height), size.width, size.height) ?: return@Canvas
             drawImage(image.asImageBitmap(), dstOffset = IntOffset(fit.left, fit.top),
                 dstSize = IntSize(fit.width, fit.height))
+            val card = progress.card
+            if (progressMatchesPhoto(progress, photo) && card != null) {
+                val outline = Path().apply {
+                    for (k in 0..3) {
+                        val x = fit.x(card[2 * k])
+                        val y = fit.y(card[2 * k + 1])
+                        if (k == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
+                }
+                drawPath(outline, colours.surface.copy(alpha = 0.9f), style = Stroke(5.dp.toPx()))
+                drawPath(outline, colours.primary, style = Stroke(3.dp.toPx()))
+            }
             if (progressMatchesPhoto(progress, photo)) for (region in progress.regions.values) {
                 if (region.state == RegionState.EXCLUDED) continue
                 val path = Path().apply {

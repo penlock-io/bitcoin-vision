@@ -461,6 +461,7 @@ impl crate::progress::Observer for Recorder<'_> {
                 completed,
                 total,
             },
+            Event::Form { outline } => Delta::Form { outline },
             Event::Region(r) => Delta::Region {
                 id: r.id,
                 region: WordRegion {

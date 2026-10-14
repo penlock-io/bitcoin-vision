@@ -29,6 +29,8 @@ data class ScanProgressState(
     val completed: UInt = 0u,
     val total: UInt? = null,
     val frame: PhotoFrame? = null,
+    /** The phrase card's corners once its marks established one; its fields are the regions. */
+    val card: List<Float>? = null,
     val regions: Map<UInt, ProgressRegion> = emptyMap(),
     val seen: Set<UInt> = emptySet(),
     val retired: Set<UInt> = emptySet(),
@@ -46,6 +48,8 @@ data class ScanProgressState(
         outcome == ProgressOutcome.Failed -> "The photo could not be read"
         outcome != null -> "Preparing review"
         phase == Phase.PREPARING -> "Preparing to read"
+        card != null && phase <= Phase.GEOMETRY -> "Phrase card found"
+        card != null && phase == Phase.READING -> "Reading the card's 12 fields"
         phase == Phase.FINDING -> "Finding words"
         phase == Phase.GEOMETRY -> "Fitting columns and boxes"
         phase == Phase.READING -> "Reading words"
@@ -54,7 +58,8 @@ data class ScanProgressState(
     }
 
     val countLabel: String? get() = if (!unavailable && outcome == null && phase == Phase.READING && total != null)
-        if (total == 0u) "No candidate regions to read" else "$completed of $total candidate regions read"
+        if (card != null) "$completed of $total fields read"
+        else if (total == 0u) "No candidate regions to read" else "$completed of $total candidate regions read"
     else null
 
     private fun withoutOverlays() = copy(
@@ -100,6 +105,11 @@ data class ScanProgressState(
                         (update.total != total || update.completed < completed))) next.malformed()
                 else next.copy(phase = update.phase, completed = update.completed, total = update.total,
                     stages = stages + update.phase)
+            }
+            is Update.Form -> {
+                if (frame == null || card != null || regions.isNotEmpty() || update.corners.size != 8 ||
+                    update.corners.any { !it.isFinite() }) next.malformed()
+                else next.copy(card = update.corners.toList())
             }
             is Update.Region -> {
                 if (overlaysDisabled) next else next.upsert(update.region)
@@ -199,6 +209,7 @@ internal class ScanProgressHandoff(val token: Int) : ScanProgressObserver {
         val update = when (val u = event.update) {
             is Update.Photo -> u.copy()
             is Update.Work -> u.copy()
+            is Update.Form -> Update.Form(u.corners.toList())
             is Update.Region -> Update.Region(region(u.region))
             is Update.Replaced -> Update.Replaced(region(u.region), u.parents.toList())
             is Update.Removed -> u.copy()

@@ -101,7 +101,9 @@ pub trait StripProgressObserver: Send + Sync {
     fn on_progress(&self, event: StripProgressEvent) -> Result<(), ProgressDeliveryError>;
 }
 
-fn project(delta: Delta<Strips>) -> StripProgressUpdate {
+/// `None` for a delta the strip display has no use for: a strip is located
+/// as one of its own regions, never announced as a form.
+fn project(delta: Delta<Strips>) -> Option<StripProgressUpdate> {
     // Native fiducials are TL, TR, BL, BR. Phone outlines need winding order.
     fn corners(quad: [(f64, f64); 4]) -> Vec<f64> {
         [0usize, 1, 3, 2]
@@ -109,8 +111,9 @@ fn project(delta: Delta<Strips>) -> StripProgressUpdate {
             .flat_map(|i| [quad[i].0, quad[i].1])
             .collect()
     }
-    match delta {
+    Some(match delta {
         Delta::Photo { width, height } => StripProgressUpdate::Photo { width, height },
+        Delta::Form { .. } => return None,
         Delta::Work {
             phase,
             completed,
@@ -139,7 +142,7 @@ fn project(delta: Delta<Strips>) -> StripProgressUpdate {
         Delta::Finished(_) => StripProgressUpdate::Finished,
         Delta::Failed(_) | Delta::Abandoned => StripProgressUpdate::Failed,
         Delta::Cancelled => StripProgressUpdate::Cancelled,
-    }
+    })
 }
 
 /// Drain every native delta through the supplied callback. The scan keeps
@@ -152,11 +155,11 @@ pub(crate) fn forward(state: &ScanState<Strips>, callback: &dyn StripProgressObs
         cursor = next;
         for event in events {
             let terminal = event.is_terminal();
+            let Some(update) = project(event) else {
+                continue;
+            };
             if callback
-                .on_progress(StripProgressEvent {
-                    sequence,
-                    update: project(event),
-                })
+                .on_progress(StripProgressEvent { sequence, update })
                 .is_err()
             {
                 return;
@@ -196,11 +199,11 @@ mod tests {
         });
         assert_eq!(
             update,
-            StripProgressUpdate::Region {
+            Some(StripProgressUpdate::Region {
                 id: 7,
                 corners: vec![1., 2., 3., 4., 7., 8., 5., 6.],
                 read: false,
-            }
+            })
         );
     }
 

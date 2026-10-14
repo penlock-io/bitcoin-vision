@@ -345,6 +345,21 @@ stage! {
         let Some((located, rectified)) = identify(&gray) else {
             return Ok(None);
         };
+        crate::progress::emit(observer, || {
+            let card = WordSheet.bounds();
+            crate::progress::Event::Form {
+                outline: [
+                    (card.x, card.y),
+                    (card.x + card.w, card.y),
+                    (card.x + card.w, card.y + card.h),
+                    (card.x, card.y + card.h),
+                ]
+                .map(|(x, y)| {
+                    let (px, py) = located.to_photo(x, y);
+                    (px as f32, py as f32)
+                }),
+            }
+        });
         let mut progress = Stage::geometry(observer, WordSheet::FIELDS);
         let quads: Vec<_> = WordSheet
             .fields()

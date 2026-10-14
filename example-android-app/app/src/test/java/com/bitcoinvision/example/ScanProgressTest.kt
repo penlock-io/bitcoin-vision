@@ -47,6 +47,41 @@ class ScanProgressTest {
         assertEquals("Checking readings", s.state().label)
     }
 
+    @Test fun a_found_card_names_itself_and_its_fields_and_a_page_never_does() {
+        val card = listOf(5f, 5f, 200f, 5f, 200f, 470f, 5f, 470f)
+        val s = Stream()
+        s.photo()
+        s.send(Update.Work(Phase.FINDING, 0u, null))
+        assertEquals("Finding words", s.state().label)
+        s.send(Update.Form(card))
+        assertEquals(card, s.state().card)
+        assertEquals("Phrase card found", s.state().label)
+        s.send(Update.Work(Phase.GEOMETRY, 0u, 12u))
+        assertEquals("Phrase card found", s.state().label)
+        s.send(Update.Work(Phase.READING, 3u, 12u))
+        assertEquals("Reading the card's 12 fields", s.state().label)
+        assertEquals("3 of 12 fields read", s.state().countLabel)
+
+        val page = Stream()
+        page.photo()
+        page.send(Update.Work(Phase.FINDING, 0u, null))
+        page.send(Update.Work(Phase.READING, 0u, 2u))
+        assertNull(page.state().card)
+        assertEquals("Reading words", page.state().label)
+    }
+
+    @Test fun a_card_before_the_photo_or_after_its_fields_is_malformed() {
+        val card = listOf(5f, 5f, 200f, 5f, 200f, 470f, 5f, 470f)
+        val early = Stream()
+        early.send(Update.Form(card))
+        assertTrue(early.state().unavailable)
+        val late = Stream()
+        late.photo()
+        late.region(0u)
+        late.send(Update.Form(card))
+        assertTrue(late.state().unavailable)
+    }
+
     @Test fun empty_reading_stage_never_divides_by_zero() {
         val s = Stream()
         s.send(Update.Work(Phase.READING, 0u, 0u))

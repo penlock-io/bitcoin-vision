@@ -143,6 +143,12 @@ pub enum Event {
         /// Fixed total for the phase; zero is a valid empty phase.
         total: Option<u32>,
     },
+    /// A recovery phrase card was established by its marks; its fields are
+    /// the regions that follow.
+    Form {
+        /// The card's corners in canonical photo pixels, clockwise.
+        outline: [(f32, f32); 4],
+    },
     /// Insert or replace all geometry/state for this ID.
     Region(Region),
     /// Atomically retire parent overlays and insert their selected replacement.

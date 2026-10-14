@@ -53,6 +53,12 @@ pub enum Delta<P: Pipeline> {
         /// Units in this phase, once fixed.
         total: Option<u32>,
     },
+    /// The photo shows a printed form, established by its own marks, and the
+    /// regions that follow are its fields rather than words found anywhere.
+    Form {
+        /// The form's corners in photo pixels, clockwise from its top-left.
+        outline: [(f32, f32); 4],
+    },
     /// Insert a region, or replace everything known about it.
     Region {
         /// Its identity.
@@ -101,6 +107,7 @@ impl<P: Pipeline> Clone for Delta<P> {
                 completed: *completed,
                 total: *total,
             },
+            Self::Form { outline } => Self::Form { outline: *outline },
             Self::Region { id, region } => Self::Region {
                 id: *id,
                 region: region.clone(),
@@ -170,6 +177,8 @@ pub struct Snapshot<P: Pipeline> {
     pub photo: Option<(u32, u32)>,
     /// The latest progress report.
     pub work: Option<(P::Phase, u32, Option<u32>)>,
+    /// The printed form's outline, once its marks have established one.
+    pub form: Option<[(f32, f32); 4]>,
     /// Every live region by identity.
     pub regions: BTreeMap<RegionId, P::Region>,
     /// Every identity retired so far, in the order it was retired.
@@ -184,6 +193,7 @@ impl<P: Pipeline> Clone for Snapshot<P> {
             cursor: self.cursor,
             photo: self.photo,
             work: self.work.clone(),
+            form: self.form,
             regions: self.regions.clone(),
             retired: self.retired.clone(),
             outcome: self.outcome.clone(),
@@ -197,6 +207,7 @@ impl<P: Pipeline> Default for Snapshot<P> {
             cursor: Cursor::default(),
             photo: None,
             work: None,
+            form: None,
             regions: BTreeMap::new(),
             retired: Vec::new(),
             outcome: None,
@@ -215,6 +226,7 @@ impl<P: Pipeline> Snapshot<P> {
                 completed,
                 total,
             } => self.work = Some((phase.clone(), *completed, *total)),
+            Delta::Form { outline } => self.form = Some(*outline),
             Delta::Region { id, region } => {
                 self.regions.insert(*id, region.clone());
             }
@@ -514,6 +526,9 @@ mod tests {
                 completed: 0,
                 total: Some(2),
             },
+            Delta::Form {
+                outline: [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)],
+            },
             region(0, 1),
             region(1, 2),
             Delta::Replaced {
@@ -536,9 +551,11 @@ mod tests {
             assert_eq!(snapshot.cursor, cursor);
             assert_eq!(snapshot.regions, folded.regions);
             assert_eq!(snapshot.retired, folded.retired);
+            assert_eq!(snapshot.form, folded.form);
         }
         let snapshot = state.snapshot();
         assert_eq!(snapshot.photo, Some((4, 3)));
+        assert_eq!(snapshot.form.map(|o| o[2]), Some((4.0, 3.0)));
         assert_eq!(
             snapshot.regions.into_iter().collect::<Vec<_>>(),
             vec![(2, 3)]

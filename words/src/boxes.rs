@@ -131,7 +131,7 @@ impl Event {
             progress::Event::Replaced { region, parents } => Self::Replaced { region, parents },
             progress::Event::Removed { id } => Self::Removed { id },
             progress::Event::Failed => Self::Failed,
-            progress::Event::Finished { .. } => return None,
+            progress::Event::Finished { .. } | progress::Event::Form { .. } => return None,
         })
     }
 }
