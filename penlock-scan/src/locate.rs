@@ -85,6 +85,9 @@ pub enum LocateError {
     /// A mark field present but invalid beyond one mark: a damaged
     /// versioned strip, refused rather than read as anything older.
     MarkFieldDamaged,
+    /// A recovery phrase card, known by its thick word boxes: not a strip,
+    /// and never read as a legacy one for having no mark field.
+    PhraseCard,
     /// No corner squares, and too few rows of checksum boxes to stand in
     /// for them.
     NoChecksumBoxes {
@@ -122,6 +125,10 @@ impl fmt::Display for LocateError {
             Self::MarkFieldDamaged => write!(
                 f,
                 "the mark field is damaged beyond one mark; refusing to guess what the strip is"
+            ),
+            Self::PhraseCard => write!(
+                f,
+                "this is a recovery phrase card, not a share strip; scan it as your words"
             ),
             Self::NoChecksumBoxes { rows } => write!(
                 f,
@@ -249,6 +256,9 @@ pub fn read_format(rectified: &GrayImage) -> Result<(crate::marks::Format, Ident
     // single spurious mark, and every real field prints at least four
     // — the id's two and the number row's masked minimum.
     if field.count_ones() <= 1 {
+        if bitcoin_vision_forms::band::ThickRows::find(rectified, RECTIFIED_PX_PER_MM).is_some() {
+            return Err(LocateError::PhraseCard);
+        }
         return Ok((Format::Legacy, read_identity(rectified)));
     }
     match crate::marks::decode(field) {

@@ -1,14 +1,17 @@
 //! The Penlock band: a 51 × 171.3 mm card with twelve rows, found by its
-//! corner squares and told apart by its mark field, laid four to an A4 page
-//! on its side with a matching panel on the back. A Penlock share strip is
-//! one, and so is the recovery phrase card; each says what its rows hold and
-//! what id its mark field carries, and both look alike because this module
+//! corner squares, laid on its side on an A4 page with a matching panel on
+//! the back. A Penlock share strip is one, told apart by its mark field,
+//! which carries its share. The recovery phrase card is one too, told apart
+//! by its shape: each of its rows is a single thick-bordered box, which a
+//! strip's thin grid of cells never is. Both look alike because this module
 //! draws everything they share.
 //!
 //! Coordinates are millimetres in the band's reading frame: `x` across,
 //! `y` along, origin at the top-left corner of the cut border.
 
-use crate::frame::Geometry;
+use image::GrayImage;
+
+use crate::frame::{Geometry, paper_white};
 use crate::render::{GUIDE, INK, LABEL_FONT, Rect, TEXT, text};
 
 /// Appends an SVG rectangle with the given presentation attributes.
@@ -48,6 +51,12 @@ impl Band {
     pub const ROW_LEFT: f64 = 6.7;
     /// A row's extent across the band: upstream's six box pitches.
     pub const ROW_WIDTH: f64 = 6.0 * 6.5;
+    /// Width of a thick row's printed border: bold enough that no light
+    /// grid reads as one, thin enough to leave a row room to write in.
+    pub const THICK_BORDER: f64 = 0.8;
+    /// How far a thick row's border is searched for from where the corners
+    /// put it: a curled card bends its middle this far from the corner fit.
+    pub const ROW_SEARCH: f64 = 1.5;
 
     /// Where the band's fiducials, orientation mark and mark field are, for
     /// finding it in a photo.
@@ -172,13 +181,32 @@ impl Band {
         );
     }
 
-    /// The fiducials, the orientation mark and the mark field printing
-    /// `field`.
-    pub fn draw_aids(&self, out: &mut String, field: u16) {
+    /// The fiducials and the orientation mark: what finds a band and says
+    /// which way up it is.
+    pub fn draw_corners(&self, out: &mut String) {
         for f in self.fiducials() {
             rect(out, f, &format!("fill=\"{INK}\""));
         }
         rect(out, self.mark(), &format!("fill=\"{INK}\""));
+    }
+
+    /// Row `index` as one thick black box, its border inside the row's
+    /// extent: how a phrase card prints its rows.
+    pub fn draw_thick_row(&self, out: &mut String, index: usize) {
+        rect(
+            out,
+            self.row(index).grow(-Band::THICK_BORDER / 2.0),
+            &format!(
+                "fill=\"none\" stroke=\"{INK}\" stroke-width=\"{}\"",
+                Band::THICK_BORDER
+            ),
+        );
+    }
+
+    /// The fiducials, the orientation mark and the mark field printing
+    /// `field`.
+    pub fn draw_aids(&self, out: &mut String, field: u16) {
+        self.draw_corners(out);
         for (i, slot) in self.mark_slots().iter().enumerate() {
             // Empty slots print as outlined boxes: the field stays legible
             // to a human, and the light outline sits with the paper at every
@@ -220,6 +248,107 @@ impl Band {
             &format!("{}.", index + 1),
         ));
     }
+}
+
+/// Where a rectified band's thick rows were found: each row's offset in
+/// millimetres from where the corner fit put it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct ThickRows(pub [(f64, f64); Band::ROWS]);
+
+impl ThickRows {
+    /// Every row's thick border on `rectified`, a band face-on at
+    /// `px_per_mm`, or `None` unless all twelve are there. Handwriting cannot
+    /// hide a border, and a strip's light cell grid never reads as one, so
+    /// this is what tells a phrase card from a strip.
+    pub fn find(rectified: &GrayImage, px_per_mm: f64) -> Option<ThickRows> {
+        let dark = (paper_white(rectified) * 0.6) as u8;
+        let mut offsets = [(0.0, 0.0); Band::ROWS];
+        for (i, offset) in offsets.iter_mut().enumerate() {
+            *offset = register(rectified, px_per_mm, dark, Band.row(i))?;
+        }
+        Some(ThickRows(offsets))
+    }
+
+    /// Row `index`'s writable interior where its border was found: inside the
+    /// border by `margin` millimetres, so the border's ink is never read.
+    pub fn interior(&self, index: usize, margin: f64) -> Rect {
+        let (dx, dy) = self.0[index];
+        let row = Band.row(index);
+        Rect {
+            x: row.x + dx,
+            y: row.y + dy,
+            ..row
+        }
+        .grow(-(Band::THICK_BORDER + margin))
+    }
+}
+
+/// Share of a printed border's pixels that must be ink for the border to be
+/// there, and the most of the paper just outside it that may be.
+const BORDER_INK: f64 = 0.8;
+const OUTSIDE_INK: f64 = 0.3;
+
+/// The offset at which `row`'s thick border sits on `rectified`, searched
+/// within [`Band::ROW_SEARCH`]: the best-inked border whose surroundings are
+/// paper, or `None` when no offset shows one.
+fn register(rectified: &GrayImage, px_per_mm: f64, dark: u8, row: Rect) -> Option<(f64, f64)> {
+    let ring = |r: Rect, width: f64| -> Vec<(f64, f64)> {
+        let inner = r.grow(-width);
+        let step = 1.0 / px_per_mm;
+        let mut points = Vec::new();
+        let mut y = r.y + step / 2.0;
+        while y < r.y + r.h {
+            let mut x = r.x + step / 2.0;
+            while x < r.x + r.w {
+                let inside =
+                    x > inner.x && x < inner.x + inner.w && y > inner.y && y < inner.y + inner.h;
+                if !inside {
+                    points.push((x, y));
+                }
+                x += step;
+            }
+            y += step;
+        }
+        points
+    };
+    // the border's middle half, so a print a little thin or thick still fills it
+    let border = ring(
+        row.grow(-Band::THICK_BORDER / 4.0),
+        Band::THICK_BORDER / 2.0,
+    );
+    let outside = ring(row.grow(Band::THICK_BORDER / 2.0 + 0.5), 0.5);
+    let share = |points: &[(f64, f64)], dx: f64, dy: f64| {
+        let inked = points
+            .iter()
+            .filter(|(x, y)| {
+                let (px, py) = (((x + dx) * px_per_mm) as i64, ((y + dy) * px_per_mm) as i64);
+                px >= 0
+                    && py >= 0
+                    && (px as u32) < rectified.width()
+                    && (py as u32) < rectified.height()
+                    && rectified.get_pixel(px as u32, py as u32).0[0] < dark
+            })
+            .count();
+        inked as f64 / points.len().max(1) as f64
+    };
+    let steps = (Band::ROW_SEARCH * px_per_mm).round() as i64;
+    let scored: Vec<(f64, f64, f64)> = (-steps..=steps)
+        .flat_map(|sy| (-steps..=steps).map(move |sx| (sx, sy)))
+        .map(|(sx, sy)| {
+            let (dx, dy) = (sx as f64 / px_per_mm, sy as f64 / px_per_mm);
+            (share(&border, dx, dy), dx, dy)
+        })
+        .collect();
+    let top = scored.iter().map(|s| s.0).fold(0.0, f64::max);
+    // the sampled middle of the border is narrower than the border, so a
+    // plateau of offsets fill it; its centre is where the border is
+    let plateau: Vec<_> = scored.iter().filter(|s| s.0 >= top - 1e-9).collect();
+    let n = plateau.len() as f64;
+    let (dx, dy) = (
+        plateau.iter().map(|s| s.1).sum::<f64>() / n,
+        plateau.iter().map(|s| s.2).sum::<f64>() / n,
+    );
+    (top >= BORDER_INK && share(&outside, dx, dy) <= OUTSIDE_INK).then_some((dx, dy))
 }
 
 /// An A4 page of bands: where each band sits on the front, and where its
@@ -429,5 +558,99 @@ impl BackPanel {
     /// Every rectangle of the panel.
     pub fn rects(&self) -> [Rect; 5] {
         [self.date, self.wallet, self.owner, self.recovery, self.qr]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frame::RECTIFIED_PX_PER_MM as K;
+    use crate::render::{rasterize, svg_document};
+
+    /// A band face-on at the rectified scale, drawn by `draw`; `shift(i)`
+    /// moves row `i` as a curled card would.
+    fn band(draw: impl Fn(&mut String)) -> GrayImage {
+        let mut body = String::new();
+        Band.draw_border(&mut body);
+        Band.draw_corners(&mut body);
+        draw(&mut body);
+        let svg = svg_document(Band::WIDTH, Band::LENGTH, &body);
+        image::DynamicImage::ImageRgb8(rasterize(&svg, K * 25.4).unwrap()).into_luma8()
+    }
+
+    fn thick(rows: usize, shift: impl Fn(usize) -> (f64, f64)) -> GrayImage {
+        band(|out| {
+            for i in 0..rows {
+                let (dx, dy) = shift(i);
+                out.push_str(&format!("<g transform=\"translate({dx} {dy})\">"));
+                Band.draw_thick_row(out, i);
+                out.push_str("</g>");
+            }
+        })
+    }
+
+    fn near(found: ThickRows, shift: impl Fn(usize) -> (f64, f64)) {
+        for (i, &(dx, dy)) in found.0.iter().enumerate() {
+            let (ex, ey) = shift(i);
+            assert!(
+                (dx - ex).abs() <= 0.2 && (dy - ey).abs() <= 0.2,
+                "row {i}: found ({dx:.2}, {dy:.2}), drawn ({ex}, {ey})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_card_is_found_with_every_row_where_it_was_printed() {
+        let found = ThickRows::find(&thick(Band::ROWS, |_| (0.0, 0.0)), K).expect("a card");
+        near(found, |_| (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_curled_card_is_found_with_each_row_where_it_bent_to() {
+        // a bow across the card: the middle rows furthest from the corner fit
+        let bend = |i: usize| {
+            let t = i as f64 / (Band::ROWS - 1) as f64;
+            (1.2 * 4.0 * t * (1.0 - t), -0.9 + 1.6 * t)
+        };
+        let found = ThickRows::find(&thick(Band::ROWS, bend), K).expect("a curled card");
+        near(found, bend);
+    }
+
+    #[test]
+    fn a_strip_a_blank_band_and_a_partial_card_are_not_cards() {
+        let strip = band(|out| {
+            Band.draw_aids(out, 0x5050);
+            for i in 0..Band::ROWS {
+                let row = Band.row(i);
+                for c in 0..6 {
+                    let cell = Rect {
+                        x: row.x + 6.5 * c as f64,
+                        w: 6.5,
+                        ..row
+                    };
+                    rect(
+                        out,
+                        cell,
+                        &format!("fill=\"none\" stroke=\"{GUIDE}\" stroke-width=\"0.3\""),
+                    );
+                }
+            }
+        });
+        assert_eq!(ThickRows::find(&strip, K), None);
+        assert_eq!(ThickRows::find(&band(|_| {}), K), None);
+        assert_eq!(
+            ThickRows::find(&thick(Band::ROWS - 1, |_| (0.0, 0.0)), K),
+            None
+        );
+    }
+
+    #[test]
+    fn an_interior_stays_inside_its_border() {
+        let found = ThickRows::find(&thick(Band::ROWS, |_| (0.0, 0.0)), K).unwrap();
+        for i in 0..Band::ROWS {
+            let row = Band.row(i);
+            let interior = found.interior(i, 0.4);
+            assert!(row.grow(-Band::THICK_BORDER).contains(&interior), "row {i}");
+        }
     }
 }
