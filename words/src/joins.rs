@@ -473,7 +473,7 @@ mod tests {
         WordBox {
             quad: quad(0., 0., 100.),
             crop: GrayImage::new(1, 1),
-            selection: Some(crate::hybrid::select(None, None, &ranked, 0.85, 0.75).unwrap()),
+            selection: Some(crate::hybrid::select(None, None, &ranked, &crate::hybrid::Policy::FIXED).unwrap()),
             ranked,
             column_rank: 0,
             row_rank: 0,
@@ -559,7 +559,7 @@ mod tests {
     fn selected_disagreement_no_longer_borrows_parent_protection() {
         let mut parent = word(0.99);
         parent.selection =
-            Some(crate::hybrid::select(Some("ability"), None, &parent.ranked, 0.85, 0.75).unwrap());
+            Some(crate::hybrid::select(Some("ability"), None, &parent.ranked, &crate::hybrid::Policy::FIXED).unwrap());
         assert_eq!(parent.pick(), Some(1));
         assert_eq!(parent.verdict(), Verdict::Uncertain);
         assert_eq!(read_reason(&parent, &word(0.6), &word(0.999)), "joined");

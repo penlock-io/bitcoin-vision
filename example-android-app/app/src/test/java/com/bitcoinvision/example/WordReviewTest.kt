@@ -36,14 +36,15 @@ class WordReviewTest {
         assertEquals(ReviewPhotoBounds(0, 0, 1000, 800), edge)
     }
     @Test fun confidence_belongs_to_displayed_word_and_unknown_is_not_zero_or_top_probability() {
+        // The word model prefers cat; the scanner read dog and gives it .7.
         val source = Source(List(8) { 0f }, listOf("cat" to .8f, "dog" to .2f),
-            false, ByteArray(0), "dog")
+            false, ByteArray(0), "dog", confidence = .7f, alternatives = listOf("cat" to .3f))
         val word = Entry(0, "dog", source, false)
-        assertEquals(.2f, word.modelConfidence)
-        assertEquals(.8f, word.copy(word = "cat").modelConfidence)
+        assertEquals(.7f, word.modelConfidence)
+        assertEquals(.3f, word.copy(word = "cat").modelConfidence)
         assertNull(word.copy(word = "zoo").modelConfidence)
         assertNull(word.copy(source = null).modelConfidence)
-        val invalid = Source(List(8) { 0f }, listOf("dog" to Float.NaN), false, ByteArray(0), "dog")
+        val invalid = Source(List(8) { 0f }, emptyList(), false, ByteArray(0), "dog", confidence = Float.NaN)
         assertNull(word.copy(source = invalid).modelConfidence)
     }
     private fun entry(id: Int, accepted: Boolean, read: String = "cat") = Entry(

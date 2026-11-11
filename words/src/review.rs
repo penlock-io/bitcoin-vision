@@ -8,7 +8,6 @@ use crate::fragments::{Decision, Ownership};
 use crate::numbering::{Numbering, dotted::ListMode};
 use crate::phrase::WordBox;
 use crate::sources::{Outcome, RawSource};
-use crate::words::Verdict;
 use crate::{Found, Quad, ScanError, ScanResult, Word};
 
 /// The whole finished page, including inactive observations for restoration.
@@ -54,12 +53,19 @@ pub struct ReviewWord {
     /// Where the word is in the photo. [`Quad::crop`] cuts a picture of it,
     /// which is not the models' own input.
     pub quad: Quad,
-    /// The five saved classifier candidates in model rank order.
+    /// The word model's own five likeliest words, in its order: diagnostic
+    /// evidence, not the alternatives to offer.
     pub ranked: Vec<(&'static str, f32)>,
-    /// Whether the native calibration accepted the selected word.
-    pub accepted: bool,
     /// Selected BIP39 word, absent on an unread geometry-only observation.
     pub selected: Option<&'static str>,
+    /// The chance `selected` is right; zero when nothing was selected.
+    pub confidence: f32,
+    /// Whether a person should confirm `selected`: its confidence is below
+    /// the calibration's `check_below`. Always true when nothing was selected.
+    pub check: bool,
+    /// Other words to offer in its place, likeliest first, each with its
+    /// confidence on the same scale. Never includes `selected`.
+    pub alternatives: Vec<(&'static str, f32)>,
     /// Literal OCR of the selected crop, if OCR ran.
     pub raw: Option<String>,
     /// Pre-cut OCR evidence when a crop was narrowed.
@@ -311,7 +317,14 @@ fn review_word(word: &WordBox) -> ReviewWord {
             .take(5)
             .filter_map(|&(i, p)| Word::from_index(i as u16).map(|word| (word.as_str(), p)))
             .collect(),
-        accepted: word.verdict() == Verdict::Accept,
+        confidence: word.selection.as_ref().map_or(0.0, |s| s.confidence() as f32),
+        check: word.selection.as_ref().is_none_or(|s| s.check()),
+        alternatives: word.selection.as_ref().map_or(Vec::new(), |s| {
+            s.alternatives()
+                .iter()
+                .filter_map(|&(i, p)| Word::from_index(i as u16).map(|w| (w.as_str(), p as f32)))
+                .collect()
+        }),
         selected: word
             .pick()
             .and_then(|i| Word::from_index(i as u16))

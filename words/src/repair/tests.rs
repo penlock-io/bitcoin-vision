@@ -124,7 +124,7 @@ fn word(quad: Quad, rank: usize) -> WordBox {
         crop: GrayImage::new(2, 3),
         ranked: vec![(0, 0.97), (1, 0.03)],
         selection: Some(
-            crate::hybrid::select(Some("abandon"), None, &[(0, 0.97), (1, 0.03)], 0.85, 0.75)
+            crate::hybrid::select(Some("abandon"), None, &[(0, 0.97), (1, 0.03)], &crate::hybrid::Policy::FIXED)
                 .unwrap(),
         ),
         column_rank: rank,
@@ -151,13 +151,13 @@ fn selected_disagreement_and_agreement_drive_union_identity_protection() {
     let mut candidate = parent.clone();
     candidate.ranked = vec![(1, 0.99), (0, 0.01)];
     candidate.selection =
-        Some(crate::hybrid::select(Some("ability"), None, &candidate.ranked, 0.85, 0.75).unwrap());
+        Some(crate::hybrid::select(Some("ability"), None, &candidate.ranked, &crate::hybrid::Policy::FIXED).unwrap());
     assert_eq!(
         union_reason(&parent, &candidate),
         "accepted_spelling_changed"
     );
     parent.selection =
-        Some(crate::hybrid::select(Some("ability"), None, &parent.ranked, 0.85, 0.75).unwrap());
+        Some(crate::hybrid::select(Some("ability"), None, &parent.ranked, &crate::hybrid::Policy::FIXED).unwrap());
     assert_eq!(parent.verdict(), Verdict::Uncertain);
     assert_eq!(union_reason(&parent, &candidate), "selected");
 }

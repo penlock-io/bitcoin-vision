@@ -25,6 +25,15 @@ pub struct Candidate {
     pub edit_cost: Option<f32>,
 }
 
+/// A word to offer in place of the selected one.
+#[derive(Debug, Serialize)]
+pub struct Alternative {
+    /// English BIP39 spelling.
+    pub word: &'static str,
+    /// The chance this word is the right one, on the selected word's scale.
+    pub confidence: f32,
+}
+
 /// One observed region. It carries no pixels; `quad` locates it in the photo.
 #[derive(Debug, Serialize)]
 pub struct Observation {
@@ -34,8 +43,12 @@ pub struct Observation {
     pub quad: crate::Quad,
     /// Selected spelling; None is never substituted with a fabricated word.
     pub selected: Option<&'static str>,
-    /// Whether the native calibration accepted the selected word.
-    pub accepted: bool,
+    /// The chance `selected` is right; zero when nothing was selected.
+    pub confidence: f32,
+    /// Whether a person should confirm `selected`.
+    pub check: bool,
+    /// Other words to offer in its place, likeliest first, never `selected`.
+    pub alternatives: Vec<Alternative>,
     /// Whether excluded from the suggested phrase.
     pub excluded: bool,
     /// Printed label ordinal, when supported by the native stage.
@@ -129,7 +142,19 @@ impl ScanResult {
                             .pick()
                             .and_then(|p| Word::from_index(p as u16))
                             .map(|w| w.as_str()),
-                        accepted: w.verdict() == crate::words::Verdict::Accept,
+                        confidence: w.selection.as_ref().map_or(0.0, |s| s.confidence() as f32),
+                        check: w.selection.as_ref().is_none_or(|s| s.check()),
+                        alternatives: w.selection.as_ref().map_or(Vec::new(), |s| {
+                            s.alternatives()
+                                .iter()
+                                .filter_map(|&(i, p)| {
+                                    Word::from_index(i as u16).map(|w| Alternative {
+                                        word: w.as_str(),
+                                        confidence: p as f32,
+                                    })
+                                })
+                                .collect()
+                        }),
                         excluded: w.stray,
                         label_number: w.number,
                         ocr_text: w.raw.as_ref().map(|r| r.text.clone()),

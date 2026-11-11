@@ -684,6 +684,15 @@ pub struct PhraseScanner {
     scanner: bitcoin_vision_words::Scanner,
 }
 
+/// A word to offer in place of the one read, with its chance of being right.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct Alternative {
+    /// The list word.
+    pub word: String,
+    /// The chance it is the word written.
+    pub confidence: f32,
+}
+
 /// One list word with the probability the model gives it.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct RankedWord {
@@ -747,11 +756,16 @@ pub struct WordReading {
     /// The word's four corners in photo pixels, clockwise from the top
     /// left, as x1, y1, ... x4, y4.
     pub corners: Vec<f32>,
-    /// The model's five most probable list words, most probable first.
+    /// The word model's five most probable list words, most probable first:
+    /// diagnostic evidence, not the alternatives to offer.
     pub ranked: Vec<RankedWord>,
-    /// Whether the calibration accepts the top word; otherwise the
-    /// person should look at the crop.
+    /// The confidence is high enough not to ask the person to check `read`.
     pub accepted: bool,
+    /// The chance `read` is right.
+    pub confidence: f32,
+    /// Other words to offer in place of `read`, likeliest first, each with
+    /// its chance of being right. Never `read` itself.
+    pub alternatives: Vec<Alternative>,
     /// The word to show first: the hybrid pick over the recogniser's
     /// read and the model's five, or the model's top without a read.
     pub read: String,
@@ -813,7 +827,16 @@ impl WordReading {
                     probability,
                 })
                 .collect(),
-            accepted: w.accepted,
+            accepted: !w.check,
+            confidence: w.confidence,
+            alternatives: w
+                .alternatives
+                .iter()
+                .map(|&(word, confidence)| Alternative {
+                    word: word.to_owned(),
+                    confidence,
+                })
+                .collect(),
             read: chosen.to_owned(),
             raw: w.raw.clone().unwrap_or_default(),
             original_ocr: w
@@ -1489,10 +1512,7 @@ mod phrase_tests {
                 bitcoin_vision_words::hybrid::select(
                     Some("abamdon"),
                     None,
-                    &[(0, 0.7), (1, 0.3)],
-                    0.85,
-                    0.75,
-                )
+                    &[(0, 0.7), (1, 0.3)], &bitcoin_vision_words::hybrid::Policy::FIXED)
                 .unwrap(),
             ),
             column_rank: 1,
@@ -1522,7 +1542,9 @@ mod phrase_tests {
                 });
             }
             let packed = pack_native_word(&word);
-            assert!(!packed.accepted && !packed.stray);
+            assert!(!packed.stray);
+            assert_eq!(packed.accepted, packed.confidence >= 0.98);
+            assert!(!packed.alternatives.iter().any(|a| a.word == packed.read));
             assert!(packed.joined_from.is_empty());
             assert_eq!(packed.expanded_from.len(), if pair { 2 } else { 1 });
             assert_eq!(
@@ -1554,8 +1576,9 @@ mod phrase_tests {
         }
         // Normal native joins retain their own ABI field, not extent metadata.
         word.expanded_from.clear();
-        // An unreadable occupied cell remains one uncertain app entry at its
-        // geometric position, carrying the native box and its picture.
+        // An occupied cell remains one app entry at its geometric position,
+        // carrying the native box and its picture; whether it asks for a
+        // check is its selection's confidence, as for any other word.
         word.evidence.cell = Some(bitcoin_vision_words::CellSupport {
             column: Some(0),
             row: Some(5),
@@ -1567,7 +1590,8 @@ mod phrase_tests {
         word.number = Some(6);
         let cell = pack_native_word(&word);
         assert_eq!(cell.number, Some(6));
-        assert!(!cell.stray && !cell.accepted);
+        assert!(!cell.stray);
+        assert_eq!(cell.accepted, cell.confidence >= 0.98);
         assert!(cell.joined_from.is_empty() && cell.expanded_from.is_empty());
         assert_eq!(cell.corners, vec![10., 20., 30., 20., 30., 40., 10., 40.]);
         assert_eq!(

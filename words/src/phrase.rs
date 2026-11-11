@@ -68,6 +68,10 @@ pub struct Calibration {
     pub min_prob: f32,
     /// A read whose top two are closer than this is uncertain.
     pub min_margin: f32,
+    /// Spreads the decision score into a word's confidence.
+    pub decision_temperature: f64,
+    /// A word whose confidence is below this is one to check.
+    pub check_below: f64,
     /// The SHA-256 of the model the thresholds were selected for.
     pub digest: String,
     /// The canvas rule the model learned under.
@@ -80,22 +84,28 @@ impl Calibration {
     /// geometry would still be digest-valid and quietly wrong.
     pub fn parse(text: &str) -> Result<Calibration, String> {
         let (mut min_prob, mut min_margin, mut digest, mut rule) = (None, None, None, None);
+        let (mut temperature, mut check_below) = (None, None);
         for line in text.lines() {
             match line.split_once('=') {
                 Some(("min_prob", v)) => min_prob = v.trim().parse::<f32>().ok(),
                 Some(("min_margin", v)) => min_margin = v.trim().parse::<f32>().ok(),
                 Some(("model_sha256", v)) => digest = Some(v.trim().to_owned()),
                 Some(("canon_rule", v)) => rule = Some(v.trim().to_owned()),
+                Some(("decision_temperature", v)) => temperature = v.trim().parse::<f64>().ok(),
+                Some(("check_below", v)) => check_below = v.trim().parse::<f64>().ok(),
                 _ => {}
             }
         }
-        let (Some(min_prob), Some(min_margin), Some(digest), Some(rule)) =
-            (min_prob, min_margin, digest, rule)
+        let (
+            Some(min_prob),
+            Some(min_margin),
+            Some(digest),
+            Some(rule),
+            Some(decision_temperature),
+            Some(check_below),
+        ) = (min_prob, min_margin, digest, rule, temperature, check_below)
         else {
-            return Err(
-                "the calibration artifact needs min_prob, min_margin, model_sha256 and canon_rule"
-                    .into(),
-            );
+            return Err("the calibration artifact needs min_prob, min_margin, model_sha256, canon_rule, decision_temperature and check_below".into());
         };
         if rule != CANON_RULE {
             return Err(format!(
@@ -107,12 +117,30 @@ impl Calibration {
                 return Err(format!("{key}={value} is not a probability"));
             }
         }
-        Ok(Calibration {
+        let calibration = Calibration {
             min_prob,
             min_margin,
+            decision_temperature,
+            check_below,
             digest,
             rule,
-        })
+        };
+        if !calibration.policy().valid() {
+            return Err(format!(
+                "decision_temperature={decision_temperature} must be positive and check_below={check_below} a probability"
+            ));
+        }
+        Ok(calibration)
+    }
+
+    /// The settings every selection under this model is judged by.
+    pub fn policy(&self) -> crate::hybrid::Policy {
+        crate::hybrid::Policy {
+            min_prob: self.min_prob,
+            min_margin: self.min_margin,
+            temperature: self.decision_temperature,
+            check_below: self.check_below,
+        }
     }
 }
 
@@ -240,8 +268,11 @@ impl WordBox {
                 self.raw.as_ref().map(|r| r.text.as_str()),
                 Some(&text),
                 &self.ranked,
-                threshold,
-                threshold,
+                &crate::hybrid::Policy {
+                    min_prob: threshold,
+                    min_margin: threshold,
+                    ..crate::hybrid::Policy::FIXED
+                },
             )
             .unwrap(),
         );
@@ -1087,8 +1118,7 @@ fn finish_evidenced(
         p.read.as_ref().map(|r| r.text.as_str()),
         owned.matching.as_ref().map(|r| r.text.as_str()),
         &p.ranked,
-        calibration.min_prob,
-        calibration.min_margin,
+        &calibration.policy(),
     )
     .map_err(|e| format!("word selection: {e}"))?;
     let geometric = p.cell.is_some();
@@ -1571,8 +1601,7 @@ fn read_words_inner(
                 p.read.as_ref().map(|r| r.text.as_str()),
                 None,
                 &p.ranked,
-                reader.calibration.min_prob,
-                reader.calibration.min_margin,
+                &reader.calibration.policy(),
             )
             .map(|s| {
                 let recognised = DecisionTrace::eligibility(&mut p.decisions, &s, "initial");
@@ -1843,8 +1872,7 @@ fn read_words_inner(
                 p.read.as_ref().map(|r| r.text.as_str()),
                 None,
                 &p.ranked,
-                reader.calibration.min_prob,
-                reader.calibration.min_margin,
+                &reader.calibration.policy(),
             )
             .map_err(|e| format!("final box selection: {e}"))?;
             word.quad = p.quad;
@@ -1960,6 +1988,8 @@ mod tests {
         let calibration = Calibration {
             min_prob: 0.5,
             min_margin: 0.1,
+            decision_temperature: 1.25,
+            check_below: 0.98,
             digest: String::new(),
             rule: CANON_RULE.to_owned(),
         };
@@ -2088,7 +2118,7 @@ mod tests {
                 crop: GrayImage::new(1, 1),
                 ranked: vec![(if i == 0 { 3 } else { 0 }, 1.0)],
                 selection: Some(
-                    select(None, None, &[(if i == 0 { 3 } else { 0 }, 1.0)], 0.85, 0.75).unwrap(),
+                    select(None, None, &[(if i == 0 { 3 } else { 0 }, 1.0)], &crate::hybrid::Policy::FIXED).unwrap(),
                 ),
                 column_rank: i,
                 row_rank: if i == 0 { 11 } else { i - 1 },
@@ -2154,11 +2184,11 @@ mod tests {
         assert_eq!(scan.initial_traversal(), initial);
         scan.words[0].ranked = vec![(0, 1.0)];
         scan.words[0].selection =
-            Some(select(None, None, &scan.words[0].ranked, 0.85, 0.75).unwrap()); // neither traversal passes
+            Some(select(None, None, &scan.words[0].ranked, &crate::hybrid::Policy::FIXED).unwrap()); // neither traversal passes
         assert_eq!(scan.initial_traversal().order, InitialOrder::Columns);
         scan.words[11].ranked = vec![(3, 1.0)];
         scan.words[11].selection =
-            Some(select(None, None, &scan.words[11].ranked, 0.85, 0.75).unwrap());
+            Some(select(None, None, &scan.words[11].ranked, &crate::hybrid::Policy::FIXED).unwrap());
         for (i, word) in scan.words.iter_mut().enumerate() {
             word.row_rank = i;
         }
@@ -2205,8 +2235,9 @@ mod tests {
 
     #[test]
     fn a_model_the_calibration_was_not_selected_on_is_refused_unloaded() {
-        let text =
-            format!("min_prob=0.5\nmin_margin=0.1\nmodel_sha256=abc\ncanon_rule={CANON_RULE}\n");
+        let text = format!(
+            "min_prob=0.5\nmin_margin=0.1\nmodel_sha256=abc\ncanon_rule={CANON_RULE}\ndecision_temperature=1.25\ncheck_below=0.98\n"
+        );
         let err = Reader::from_bytes(b"not the model", &text).err().unwrap();
         assert!(
             err.contains("does not match the calibration artifact's abc"),
@@ -2216,14 +2247,19 @@ mod tests {
 
     #[test]
     fn the_calibration_artifact_is_parsed_and_checked() {
-        let text =
-            format!("min_prob=0.5\nmin_margin=0.1\nmodel_sha256=abc\ncanon_rule={CANON_RULE}\n");
+        let text = format!(
+            "min_prob=0.5\nmin_margin=0.1\nmodel_sha256=abc\ncanon_rule={CANON_RULE}\ndecision_temperature=1.25\ncheck_below=0.98\n"
+        );
         let c = Calibration::parse(&text).unwrap();
         assert_eq!(
             (c.min_prob, c.min_margin, c.digest.as_str()),
             (0.5, 0.1, "abc")
         );
+        assert_eq!((c.decision_temperature, c.check_below), (1.25, 0.98));
         assert!(Calibration::parse("min_prob=0.5\n").is_err());
+        assert!(Calibration::parse(&text.replace("decision_temperature=1.25\n", "")).is_err());
+        assert!(Calibration::parse(&text.replace("check_below=0.98", "check_below=2")).is_err());
+        assert!(Calibration::parse(&text.replace("=1.25", "=0")).is_err());
         assert!(Calibration::parse(&text.replace(CANON_RULE, "another-rule")).is_err());
         assert!(Calibration::parse(&text.replace("0.5", "1.5")).is_err());
     }

@@ -50,9 +50,36 @@ dropped.
 Ordered words and their photo-coordinate polygons, and no image bytes:
 `quad.crop(&photo)` cuts a word's picture for a person to check, a near copy of
 the models' input and not that input itself; the literal OCR text; every candidate with its probability and, where the
-ranking ran, its hybrid score; the branch that selected the word and whether it
-was confirmed; excluded observations with their reasons; and whether the
+ranking ran, its hybrid score; the branch that selected the word; its
+`confidence` and `check`, and the `alternatives` to offer in its place;
+excluded observations with their reasons; and whether the
 assembled phrase's checksum is valid.
+
+## Confidence and Check
+
+`confidence` is the chance the selected word is right. The scanner ranks words
+by a decision score, `log10(probability) - weighted edit distance` from the
+letters read; a word's confidence is its share of `10^(score / T)` over all
+2048 words, with `T = decision_temperature` from the model's calibration file.
+The selected word is scored this way even when the letters read were exactly a
+list word and taken without comparing scores, so an exact read the score would
+rank below another word gets a low confidence. `check` is set when the
+confidence is below the calibration's `check_below`. `alternatives` are the
+other words, likeliest first, on the same scale, and never include the
+selected word.
+
+`T = 1.25` and `check_below = 0.98` were measured on 405 words found on 29
+photographed test pages, fitted on 3319 words from a handwriting corpus and
+hand-cut photo crops that exclude those pages. On the pages the numbers are
+within about 1% of the observed rate overall: words given 99% or more were
+right 331 times in 332. The check flags 62 words (15.3%) and catches 18 of the
+20 wrong picks (90.0%). Below 95% each band held 8 to 22 words, so there the
+number orders words well but its exact value is not yet measured, and on picks
+made by comparing scores it runs about five points high.
+
+The word model's own verdict on its top word, which earlier releases reported
+as `accepted`, is no longer in the output. The pipeline still uses it inside,
+where it decides joins and repairs.
 
 `probability` is a model probability. `hybrid_score` is a ranking statistic and
 is not one. A missing score means the executed branch did not rank that

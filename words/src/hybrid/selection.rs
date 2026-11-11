@@ -109,6 +109,45 @@ impl Candidate {
     }
 }
 
+/// The calibrated settings a selection is judged by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Policy {
+    /// The word model's top probability below which its verdict is uncertain.
+    pub min_prob: f32,
+    /// The word model's lead over its runner-up below which its verdict is uncertain.
+    pub min_margin: f32,
+    /// Spreads the decision score into a confidence: a word's confidence is
+    /// its share of `10^(score / temperature)` over all 2048 words.
+    pub temperature: f64,
+    /// A pick whose confidence is below this is one to check.
+    pub check_below: f64,
+}
+
+impl Policy {
+    /// The word-model thresholds fixtures and the earlier stages use, with
+    /// the decision settings measured in `docs/confidence-calibration.md`.
+    /// Not the shipped calibration, which the model's artifact carries.
+    pub const FIXED: Policy = Policy {
+        min_prob: 0.85,
+        min_margin: 0.75,
+        temperature: 1.25,
+        check_below: 0.98,
+    };
+
+    pub(crate) fn valid(&self) -> bool {
+        [self.min_prob, self.min_margin]
+            .iter()
+            .all(|p| p.is_finite() && (0.0..=1.0).contains(p))
+            && self.temperature.is_finite()
+            && self.temperature > 0.0
+            && self.check_below.is_finite()
+            && (0.0..=1.0).contains(&self.check_below)
+    }
+}
+
+/// Alternatives a selection keeps beside its pick.
+pub const ALTERNATIVES: usize = 8;
+
 /// A word and its support bound together, with no independently mutable verdict.
 #[derive(Clone, Debug)]
 pub struct Selection {
@@ -124,6 +163,9 @@ pub struct Selection {
     thresholds: (f32, f32),
     candidates: Vec<Candidate>,
     confirmation: Confirmation,
+    confidence: f64,
+    check: bool,
+    alternatives: Vec<(usize, f64)>,
 }
 
 impl Selection {
@@ -177,6 +219,22 @@ impl Selection {
     /// Why this selected word is confirmed or needs review.
     pub fn confirmation(&self) -> Confirmation {
         self.confirmation
+    }
+    /// The chance the pick is right: its share of `10^(score / T)` over all
+    /// 2048 words, scored against the effective text even where an exact
+    /// read was taken without comparing scores.
+    pub fn confidence(&self) -> f64 {
+        self.confidence
+    }
+    /// Whether a person should confirm the pick: its confidence is below the
+    /// policy's `check_below`.
+    pub fn check(&self) -> bool {
+        self.check
+    }
+    /// Other words, likeliest first by decision score, each with its
+    /// confidence on the same scale; never the pick itself.
+    pub fn alternatives(&self) -> &[(usize, f64)] {
+        &self.alternatives
     }
     /// Read-only projection of this selection's confirmation evidence.
     pub fn verdict(&self) -> Verdict {
@@ -301,10 +359,9 @@ stage! {
         literal: Option<&str>,
         matching: Option<&str>,
         ranked: &[(usize, f32)],
-        min_prob: f32,
-        min_margin: f32,
+        policy: &Policy,
     ) -> Result<Selection, SelectionError> {
-        select_inner(literal, matching, ranked, min_prob, min_margin, false)
+        select_inner(literal, matching, ranked, policy, false)
     }
 }
 
@@ -314,26 +371,22 @@ pub fn select_bounded(
     literal: Option<&str>,
     matching: Option<&str>,
     ranked: &[(usize, f32)],
-    min_prob: f32,
-    min_margin: f32,
+    policy: &Policy,
 ) -> Result<Selection, SelectionError> {
-    select_inner(literal, matching, ranked, min_prob, min_margin, true)
+    select_inner(literal, matching, ranked, policy, true)
 }
 
 fn select_inner(
     literal: Option<&str>,
     matching: Option<&str>,
     ranked: &[(usize, f32)],
-    min_prob: f32,
-    min_margin: f32,
+    policy: &Policy,
     bounded: bool,
 ) -> Result<Selection, SelectionError> {
-    if [min_prob, min_margin]
-        .iter()
-        .any(|p| !p.is_finite() || !(0.0..=1.0).contains(p))
-    {
+    if !policy.valid() {
         return Err(SelectionError::InvalidThresholds);
     }
+    let (min_prob, min_margin) = (policy.min_prob, policy.min_margin);
     let mut seen = [false; 2048];
     let mut previous = 1.0;
     for &(index, probability) in ranked {
@@ -415,6 +468,7 @@ fn select_inner(
         _ if verdict(ranked, min_prob, min_margin) == Verdict::Accept => Confirmation::Accepted,
         _ => Confirmation::Insufficient,
     };
+    let (confidence, alternatives) = spread(&read, ranked, word, policy.temperature);
     Ok(Selection {
         policy: if bounded {
             "bounded-log10-v1"
@@ -432,11 +486,97 @@ fn select_inner(
         thresholds: (min_prob, min_margin),
         candidates,
         confirmation,
+        confidence,
+        check: confidence < policy.check_below,
+        alternatives,
     })
+}
+
+/// The pick's share of `10^(score / temperature)` over all 2048 words, and
+/// the likeliest other words with theirs. A word the ranking omits has
+/// probability zero; with no letters read the score is the word model's alone.
+fn spread(
+    read: &str,
+    ranked: &[(usize, f32)],
+    pick: usize,
+    temperature: f64,
+) -> (f64, Vec<(usize, f64)>) {
+    let mut probabilities = [0f32; 2048];
+    for &(i, p) in ranked {
+        probabilities[i] = p;
+    }
+    let scores: Vec<f64> = probabilities
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| {
+            let edits = if read.is_empty() {
+                0.0
+            } else {
+                f64::from(distance(read, Word::from_index(i as u16).unwrap().as_str(), &CURRENT))
+            };
+            f64::from(p).log10() - edits
+        })
+        .collect();
+    let top = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !top.is_finite() {
+        return (0.0, Vec::new());
+    }
+    let k = std::f64::consts::LN_10 / temperature;
+    let weights: Vec<f64> = scores.iter().map(|s| ((s - top) * k).exp()).collect();
+    let total: f64 = weights.iter().sum();
+    let mut others: Vec<usize> = (0..weights.len()).filter(|&i| i != pick && weights[i] > 0.0).collect();
+    others.sort_by(|&a, &b| weights[b].total_cmp(&weights[a]).then(a.cmp(&b)));
+    others.truncate(ALTERNATIVES);
+    (
+        weights[pick] / total,
+        others.into_iter().map(|i| (i, weights[i] / total)).collect(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn confidence_is_the_picks_tempered_share_over_every_word() {
+        // walk read exactly, so only it scores log10(0.6); every other word
+        // is at least one edit away.
+        let s = choose(Some("walk"), None, &[("walk", 0.6), ("wall", 0.4)]);
+        let k = std::f64::consts::LN_10 / Policy::FIXED.temperature;
+        let score = |p: f64, edits: f64| ((p.log10() - edits) * k).exp();
+        let (walk, wall) = (score(0.6, 0.0), score(0.4, 1.0));
+        // The probabilities pass through f32, so agreement is to f32 precision.
+        assert!((s.confidence() - walk / (walk + wall)).abs() < 1e-6);
+        assert_eq!(s.alternatives().len(), 1);
+        assert_eq!(s.alternatives()[0].0, i("wall"));
+        assert!((s.alternatives()[0].1 - wall / (walk + wall)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_exact_read_the_score_ranks_second_gets_a_lower_number_and_a_check() {
+        // "ten" is read exactly, but the model puts nearly everything on
+        // "tent", one edit away: the score ranks tent first.
+        let overruled = choose(Some("ten"), None, &[("tent", 0.999), ("ten", 0.001)]);
+        assert_eq!(overruled.word(), i("ten"));
+        assert_eq!(overruled.branch(), Branch::ExactText);
+        let agreed = choose(Some("ten"), None, &[("ten", 0.999), ("tent", 0.001)]);
+        assert!(overruled.confidence() < agreed.confidence());
+        assert!(overruled.check());
+        assert!(!overruled.alternatives().iter().any(|&(w, _)| w == overruled.word()));
+    }
+
+    #[test]
+    fn a_policy_outside_its_ranges_is_refused() {
+        for policy in [
+            Policy { temperature: 0.0, ..Policy::FIXED },
+            Policy { temperature: f64::NAN, ..Policy::FIXED },
+            Policy { check_below: 1.5, ..Policy::FIXED },
+        ] {
+            assert_eq!(
+                select(None, None, &[(0, 1.0)], &policy).unwrap_err(),
+                SelectionError::InvalidThresholds
+            );
+        }
+    }
 
     /// The constant is the list's own longest word, not a guess about reads.
     #[test]
@@ -456,8 +596,7 @@ mod tests {
             text,
             matching,
             &ranks.iter().map(|r| (i(r.0), r.1)).collect::<Vec<_>>(),
-            0.85,
-            0.75,
+            &Policy::FIXED,
         )
         .unwrap()
     }
@@ -530,11 +669,11 @@ mod tests {
     #[test]
     fn no_candidate_is_an_error_but_exact_text_needs_no_ranking() {
         assert_eq!(
-            select(None, None, &[], 0.85, 0.75).unwrap_err(),
+            select(None, None, &[], &crate::hybrid::Policy::FIXED).unwrap_err(),
             SelectionError::NoCandidate
         );
         assert_eq!(
-            select(Some("exf"), None, &[(i("exist"), 0.0)], 0.85, 0.75).unwrap_err(),
+            select(Some("exf"), None, &[(i("exist"), 0.0)], &crate::hybrid::Policy::FIXED).unwrap_err(),
             SelectionError::NoCandidate
         );
         assert_eq!(choose(Some("story"), None, &[]).word(), i("story"));
@@ -564,12 +703,12 @@ mod tests {
             vec![(0, 0.6), (0, 0.4)],
         ] {
             assert_eq!(
-                select(Some("story"), None, &ranks, 0.85, 0.75).unwrap_err(),
+                select(Some("story"), None, &ranks, &crate::hybrid::Policy::FIXED).unwrap_err(),
                 SelectionError::InvalidRanking
             );
         }
         assert_eq!(
-            select(None, None, &[(0, 1.0)], f32::NAN, 0.75).unwrap_err(),
+            select(None, None, &[(0, 1.0)], &Policy { min_prob: f32::NAN, ..Policy::FIXED }).unwrap_err(),
             SelectionError::InvalidThresholds
         );
     }
@@ -577,7 +716,7 @@ mod tests {
     #[test]
     fn joint_ties_are_deterministic_but_not_confident() {
         let ranks = [(i("wall"), 0.5), (i("walk"), 0.5)];
-        let s = select(Some("walx"), None, &ranks, 0.4, 0.0).unwrap();
+        let s = select(Some("walx"), None, &ranks, &Policy { min_prob: 0.4, min_margin: 0.0, ..Policy::FIXED }).unwrap();
         assert_eq!(s.word(), i("walk"));
         assert_eq!(s.score_gap(), Some(0.0));
         assert_eq!(s.verdict(), Verdict::Uncertain);
@@ -585,8 +724,7 @@ mod tests {
             Some("walx"),
             None,
             &[(i("walk"), 0.5), (i("wall"), 0.5)],
-            0.4,
-            0.0,
+            &Policy { min_prob: 0.4, min_margin: 0.0, ..Policy::FIXED },
         )
         .unwrap();
         assert_eq!(s.confirmation(), Confirmation::JointTie);
@@ -651,18 +789,18 @@ mod tests {
         ranks.retain(|r| r.0 != i("walk") && r.0 != i("exist"));
         ranks.insert(0, (i("walk"), 0.1));
         ranks.insert(0, (i("exist"), 0.8));
-        let s = select(Some("walx"), None, &ranks, 0.85, 0.75).unwrap();
+        let s = select(Some("walx"), None, &ranks, &crate::hybrid::Policy::FIXED).unwrap();
         assert_eq!(s.candidates().len(), 2048);
         assert_eq!(s.word(), i("walk"));
         assert_eq!(s.diagnostic()["scoring"]["candidate_count"], 2048);
-        let far = select(Some("zzzzzzzzzzzzzz"), None, &ranks, 0.85, 0.75).unwrap();
+        let far = select(Some("zzzzzzzzzzzzzz"), None, &ranks, &crate::hybrid::Policy::FIXED).unwrap();
         assert!(
             far.candidates()
                 .iter()
                 .all(|c| c.distance() > CURRENT.budget)
         );
         assert_eq!(far.candidates().len(), 2048);
-        let legacy = select_bounded(Some("zzzzzzzzzzzzzz"), None, &ranks, 0.85, 0.75).unwrap();
+        let legacy = select_bounded(Some("zzzzzzzzzzzzzz"), None, &ranks, &crate::hybrid::Policy::FIXED).unwrap();
         assert_eq!(legacy.candidates().len(), 1);
         assert_eq!(legacy.policy(), "bounded-log10-v1");
     }

@@ -46,7 +46,7 @@ fn overlay(photo: &image::RgbImage, scan: &ScanResult) -> image::RgbImage {
     );
     let document = scan.document();
     for &index in &document.ordered_observations {
-        let color = if document.observations[index].accepted {
+        let color = if !document.observations[index].check {
             ACCEPTED
         } else {
             UNCERTAIN
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stroke = (photo.width() as f32 / 600.).max(1.);
     for (position, &index) in document.ordered_observations.iter().enumerate() {
         let observation = &document.observations[index];
-        let color = ink(if observation.accepted {
+        let color = ink(if !observation.check {
             ACCEPTED
         } else {
             UNCERTAIN

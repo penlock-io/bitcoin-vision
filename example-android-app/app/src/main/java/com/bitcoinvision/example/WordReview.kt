@@ -9,10 +9,12 @@ import kotlin.math.max
 val Entry.needsAttention: Boolean
     get() = source?.accepted == false && !corrected
 
-/** Support for this displayed word, never the probability of a different top pick. */
+/** The scanner's chance that this displayed word is right, for the read or
+ * any alternative it offered; null for a word it never offered. */
 val Entry.modelConfidence: Float?
-    get() = source?.ranked?.firstOrNull { it.first == word }?.second
-        ?.takeIf { it.isFinite() && it in 0f..1f }
+    get() = source?.let { s ->
+        if (word == s.read) s.confidence else s.alternatives.firstOrNull { it.first == word }?.second
+    }?.takeIf { it.isFinite() && it in 0f..1f }
 
 private val numberLabel = Regex("([0-9]{1,2})[.)]")
 
@@ -62,4 +64,6 @@ internal fun WordReading.reviewSource() = Source(
     matching = matching?.let { MatchingText(it.text, it.original, it.removedPrefixBytes.toInt()) },
     labels = labels.map { ObservedLabel(it.literal, it.ordinal?.toInt(), it.origin, it.ambiguous, it.corners) },
     labelConflict = labelConflict,
+    confidence = confidence,
+    alternatives = alternatives.map { it.word to it.confidence },
 )

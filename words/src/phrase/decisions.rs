@@ -430,6 +430,8 @@ mod tests {
                     &Calibration {
                         min_prob: 0.85,
                         min_margin: 0.75,
+                        decision_temperature: 1.25,
+                        check_below: 0.98,
                         digest: String::new(),
                         rule: CANON_RULE.into(),
                     },
@@ -700,7 +702,7 @@ mod tests {
             Some("air"),
             Some("zzzzzzzz"),
         ] {
-            let selected = crate::hybrid::select(raw, None, &ranks, 0.85, 0.75).unwrap();
+            let selected = crate::hybrid::select(raw, None, &ranks, &crate::hybrid::Policy::FIXED).unwrap();
             let original = selected.text().is_none_or(|text| {
                 crate::hybrid::near_list(text, &crate::hybrid::CURRENT)
                     || selected.verdict() == crate::words::Verdict::Accept
@@ -729,7 +731,7 @@ mod tests {
         }
         for letter in 'a'..='z' {
             let selected =
-                crate::hybrid::select(Some(&letter.to_string()), None, &ranks, 0.85, 0.75).unwrap();
+                crate::hybrid::select(Some(&letter.to_string()), None, &ranks, &crate::hybrid::Policy::FIXED).unwrap();
             let (kept, event) = selected.word_like_traced(true);
             assert!(kept);
             let distance = event.unwrap()["near_list"]["witness"]["distance"]
@@ -766,6 +768,8 @@ mod tests {
                     &Calibration {
                         min_prob: 0.85,
                         min_margin: 0.75,
+                        decision_temperature: 1.25,
+                        check_below: 0.98,
                         digest: String::new(),
                         rule: String::new(),
                     },

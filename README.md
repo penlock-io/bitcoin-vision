@@ -136,7 +136,8 @@ let document = result.document();
 
 for &index in &document.ordered_observations {
     let word = &document.observations[index];
-    // word.selected, word.quad, word.candidates and word.selection
+    // word.selected and word.confidence, word.check (ask the person to confirm),
+    // word.alternatives to offer instead, likeliest first, and word.quad
     let picture = word.quad.crop(&photo); // the word's picture, for a person to check
     // Do not log wallet phrases in production.
 }
@@ -161,8 +162,9 @@ One real phone capture, followed by the scanner's returned boxes:
 
 The ordered output is `shop exhaust erase demand switch powder now fault anchor
 enact rather cook`. This example's checksum passes. It is a demonstration, not
-an accuracy benchmark. Green means native confirmation was accepted; amber means
-review is required. Neither color is a ground-truth correctness assertion.
+an accuracy benchmark. Green means the word's confidence is high enough not to
+ask; amber means `check` is set and a person should confirm it. Neither color is
+a ground-truth correctness assertion.
 
 The phrase is a throwaway made for testing. The included full-resolution
 [example photo](words/examples/photos/handwritten.png) has no EXIF or device

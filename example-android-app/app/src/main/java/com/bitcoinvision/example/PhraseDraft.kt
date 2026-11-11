@@ -29,8 +29,9 @@ data class ObservedLabel(val literal: String, val ordinal: Int?, val origin: Str
 class Source(
     /** Four corners in photo pixels, x1, y1, ... x4, y4. */
     val corners: List<Float>,
-    /** The model's ranked list words with probabilities, best first. */
+    /** The word model's own ranked list words with probabilities, best first. */
     val ranked: List<Pair<String, Float>>,
+    /** Confident enough in [read] not to ask the person to check it. */
     val accepted: Boolean,
     val cropPng: ByteArray,
     /** The word the phone shows first: the pick over the recogniser's
@@ -48,6 +49,10 @@ class Source(
     val joinedFrom: List<Int> = emptyList(),
     /** One or two originals of an expanded crop; distinct from a native join. */
     val expandedFrom: List<ExpansionParent> = emptyList(),
+    /** The chance [read] is right. */
+    val confidence: Float = 0f,
+    /** Other words to offer in place of [read], likeliest first, with their chances. */
+    val alternatives: List<Pair<String, Float>> = emptyList(),
     val originalOcr: OriginalOcr? = null,
     val matching: MatchingText? = null,
     val labels: List<ObservedLabel> = emptyList(),

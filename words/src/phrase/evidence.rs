@@ -219,6 +219,8 @@ mod tests {
             &Calibration {
                 min_prob: 0.9,
                 min_margin: 0.8,
+                decision_temperature: 1.25,
+                check_below: 0.98,
                 digest: String::new(),
                 rule: CANON_RULE.into(),
             },
@@ -285,6 +287,8 @@ mod tests {
             &Calibration {
                 min_prob: 0.9,
                 min_margin: 0.8,
+                decision_temperature: 1.25,
+                check_below: 0.98,
                 digest: String::new(),
                 rule: CANON_RULE.into(),
             },

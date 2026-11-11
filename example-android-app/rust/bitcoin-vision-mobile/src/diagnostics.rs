@@ -78,10 +78,7 @@ mod tests {
                 bitcoin_vision_words::hybrid::select(
                     Some("abandon"),
                     None,
-                    &[(0, 0.9), (1, 0.1)],
-                    0.85,
-                    0.75,
-                )
+                    &[(0, 0.9), (1, 0.1)], &bitcoin_vision_words::hybrid::Policy::FIXED)
                 .unwrap(),
             ),
             column_rank: 0,

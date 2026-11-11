@@ -100,7 +100,7 @@ private val LowConfidence = Color(0xFFB3261E)
 /** One palette for row confidence and the corresponding polygon on the photo. */
 internal fun confidenceColour(entry: Entry): Color = when {
     entry.modelConfidence == null -> LeftOut
-    entry.modelConfidence!! >= 0.85f -> Accepted
+    entry.source?.let { it.accepted && it.read == entry.word } == true -> Accepted
     entry.modelConfidence!! >= 0.5f -> Uncertain
     else -> LowConfidence
 }
@@ -746,8 +746,8 @@ internal fun WordRow(
             )
             val confidence = entry.modelConfidence
             val confidenceText = confidence?.let {
-                "Model confidence ${String.format(Locale.ROOT, "%.1f%%", it * 100)}"
-            } ?: "Model confidence unavailable"
+                "Confidence ${String.format(Locale.ROOT, "%.1f%%", it * 100)}"
+            } ?: "Confidence unavailable"
             LinearProgressIndicator(
                 progress = { confidence ?: 0f },
                 color = confidenceColour(entry),
@@ -851,9 +851,9 @@ private fun EditSheet(
                 )
                 OcrEvidence(source)
                 Text(
-                    "Model's top candidate: ${source.ranked.first().first} " +
-                        String.format(Locale.ROOT, "%.2f%%", source.probability * 100) +
-                        ". Initially shown as \"${source.read}\". Other possibilities:",
+                    "Read as \"${source.read}\", " +
+                        String.format(Locale.ROOT, "%.1f%%", source.confidence * 100) +
+                        " likely. Other possibilities, likeliest first:",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.testTag("word-confidence"),
                 )
@@ -863,7 +863,7 @@ private fun EditSheet(
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for ((word, p) in source.ranked.take(5)) {
+                    for ((word, p) in listOf(source.read to source.confidence) + source.alternatives) {
                         FilterChip(
                             selected = entry.word == word,
                             onClick = { choose(word) },

@@ -155,7 +155,7 @@ class NewSeedBackupTest {
 
     @Test fun native_selection_is_used_not_confidence_checks_or_edited_drafts() {
         val readings = words.map { word -> WordReading(
-            corners = List(8) { 0f }, ranked = emptyList(), accepted = false,
+            corners = List(8) { 0f }, ranked = emptyList(), accepted = false, confidence = 0f, alternatives = emptyList(),
             read = word, raw = "uncertain independent OCR", originalOcr = null,
             matching = null, labels = emptyList(), labelConflict = false, stray = false,
             number = null, apart = false, cropPng = byteArrayOf(), joinedFrom = emptyList(), expandedFrom = emptyList(),

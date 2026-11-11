@@ -58,7 +58,7 @@ fn word(quad: Quad, rank: usize) -> WordBox {
         crop: GrayImage::new(1, 1),
         ranked: vec![(0, 0.97), (1, 0.03)],
         selection: Some(
-            crate::hybrid::select(Some("abandon"), None, &[(0, 0.97), (1, 0.03)], 0.85, 0.75)
+            crate::hybrid::select(Some("abandon"), None, &[(0, 0.97), (1, 0.03)], &crate::hybrid::Policy::FIXED)
                 .unwrap(),
         ),
         column_rank: rank,

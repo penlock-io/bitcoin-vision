@@ -12,7 +12,8 @@ mod selection;
 #[cfg(not(feature = "research"))]
 pub(crate) use selection::select;
 pub use selection::{
-    Branch, Candidate, Confirmation, Selection, SelectionError, Support, TextSource,
+    ALTERNATIVES, Branch, Candidate, Confirmation, Policy, Selection, SelectionError, Support,
+    TextSource,
 };
 #[cfg(feature = "research")]
 pub use selection::{select, select_bounded};

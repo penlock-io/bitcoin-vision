@@ -16,7 +16,7 @@ class ScanDiagnosticsTest {
 
     private fun fixture(): DiagnosedScan {
         val word = WordReading(
-            corners = List(8) { it.toFloat() }, ranked = emptyList(), accepted = false,
+            corners = List(8) { it.toFloat() }, ranked = emptyList(), accepted = false, confidence = 0f, alternatives = emptyList(),
             read = "fox", raw = "x", originalOcr = OcrObservation(List(8) { 2f }, byteArrayOf(8, 9), "7."),
             matching = null, labels = emptyList(), labelConflict = false, stray = false,
             number = null, apart = false, cropPng = byteArrayOf(1, 2, 3),
