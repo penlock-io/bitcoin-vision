@@ -16,7 +16,7 @@ use crate::read_budget::{MAX_READ_PIXELS, MAX_READS, MAX_ROI_PIXELS, MAX_ROIS};
 use crate::recogniser::Recogniser;
 use crate::split::{Frame, binarise, level_crop_in, turn};
 #[cfg(test)]
-use crate::split::{frame_of, level_crop, with_margin};
+use crate::split::{frame_of, with_margin};
 use crate::words::Verdict;
 use image::RgbImage;
 use serde_json::{Value, json};

@@ -17,7 +17,14 @@ fn scan_and_saved_projections_are_the_external_contract() {
 
     fn projections(result: &ScanResult) {
         let _ = result.document();
-        let _ = result.review();
+        let review = result.review();
+        let _: Option<fn(&bitcoin_vision_words::Quad, &image::RgbImage) -> image::GrayImage> =
+            review
+                .words
+                .first()
+                .map(|_| bitcoin_vision_words::Quad::crop as _);
+        let _: fn(&[u8], Option<u8>) -> Result<image::RgbImage, _> =
+            bitcoin_vision_words::decode_image;
         let _ = result.selected_boxes();
         let _ = result.decision_files(1, "unknown");
     }

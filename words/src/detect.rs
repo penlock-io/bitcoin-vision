@@ -36,8 +36,23 @@ const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
 const STD: [f32; 3] = [0.229, 0.224, 0.225];
 
 /// Four corners in photo pixels, clockwise from the top left.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[serde(transparent)]
 pub struct Quad(pub [(f32, f32); 4]);
+
+impl Quad {
+    /// The picture of what the quad encloses: its minimum rotated rectangle,
+    /// turned level, in grey. Anything beyond the photo's edge is paper.
+    ///
+    /// For a word's final quad this is the crop the models read, to within
+    /// a few pixels at its corners.
+    ///
+    /// `photo` is the image the quad was found in, as decoded by
+    /// [`decode_image`](crate::decode_image).
+    pub fn crop(&self, photo: &image::RgbImage) -> image::GrayImage {
+        crate::split::level_crop_in(photo, crate::split::frame_of(self))
+    }
+}
 
 /// Closed convex-quad intersection via the separating-axis test. Shared by
 /// extent and fragment ownership so neighboring-ink vetoes use one geometry.
@@ -615,5 +630,54 @@ mod tests {
     fn corners_come_back_clockwise_from_the_top_left() {
         let q = clockwise([(10.0, 20.0), (0.0, 0.0), (10.0, 0.0), (0.0, 20.0)]);
         assert_eq!(q, [(0.0, 0.0), (10.0, 0.0), (10.0, 20.0), (0.0, 20.0)]);
+    }
+}
+
+#[cfg(test)]
+mod crop_tests {
+    use super::Quad;
+    use image::{Rgb, RgbImage};
+
+    fn photo() -> RgbImage {
+        // Paper, with one black word box at x 20..60, y 30..40.
+        RgbImage::from_fn(100, 80, |x, y| {
+            if (20..60).contains(&x) && (30..40).contains(&y) {
+                Rgb([0; 3])
+            } else {
+                Rgb([255; 3])
+            }
+        })
+    }
+
+    #[test]
+    fn a_level_quad_crops_to_its_own_pixels() {
+        let crop = Quad([(20., 30.), (60., 30.), (60., 40.), (20., 40.)]).crop(&photo());
+        assert_eq!(crop.dimensions(), (40, 10));
+        assert!(crop.pixels().all(|p| p.0[0] == 0));
+    }
+
+    #[test]
+    fn a_tilted_quad_comes_back_level() {
+        let photo = RgbImage::from_fn(100, 100, |x, y| {
+            // A band of ink along the main diagonal.
+            if (x as i32 - y as i32).abs() <= 3 {
+                Rgb([0; 3])
+            } else {
+                Rgb([255; 3])
+            }
+        });
+        let crop = Quad([(22., 18.), (82., 78.), (78., 82.), (18., 22.)]).crop(&photo);
+        let (w, h) = crop.dimensions();
+        assert!(w > 80 && h < 8, "{w}x{h}");
+        assert!((0..w).all(|x| crop.get_pixel(x, h / 2).0[0] == 0));
+    }
+
+    #[test]
+    fn beyond_the_photo_is_paper() {
+        let photo = RgbImage::from_pixel(10, 10, Rgb([0; 3]));
+        let crop = Quad([(-10., 0.), (10., 0.), (10., 10.), (-10., 10.)]).crop(&photo);
+        assert_eq!(crop.dimensions(), (20, 10));
+        assert_eq!(crop.get_pixel(0, 5).0, [255]);
+        assert_eq!(crop.get_pixel(19, 5).0, [0]);
     }
 }

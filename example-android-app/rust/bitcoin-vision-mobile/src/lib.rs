@@ -24,6 +24,7 @@ use crate::progress::Observer;
 use bitcoin_vision_words::recogniser::Preparation;
 use bitcoin_vision_words::scan::Outcome as ScanOutcome;
 use bitcoin_vision_words::{ScanError, ScanOptions, ScanResult};
+use image::RgbImage;
 use penlock::soft::search::{Bip39Checksum, Filter, Floor, Outcome, search, slots};
 use penlock::soft::{Evidence, SoftDecoded, combine, decode_soft};
 use penlock::word::symbols_to_string;
@@ -783,15 +784,27 @@ pub struct WordReading {
     pub expanded_from: Vec<ExtentParent>,
 }
 
-impl TryFrom<&bitcoin_vision_words::review::ReviewWord> for WordReading {
-    type Error = VisionError;
+fn crop_png(quad: &bitcoin_vision_words::Quad, photo: &RgbImage) -> Result<Vec<u8>, VisionError> {
+    let mut bytes = Vec::new();
+    quad.crop(photo)
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .map_err(|error| VisionError::Scan {
+            detail: format!("encoding a word's crop: {error}"),
+        })?;
+    Ok(bytes)
+}
 
-    fn try_from(w: &bitcoin_vision_words::review::ReviewWord) -> Result<Self, Self::Error> {
+impl WordReading {
+    /// `photo` is the image the scan read, which the word's crops are cut from.
+    fn pack(
+        w: &bitcoin_vision_words::review::ReviewWord,
+        photo: &RgbImage,
+    ) -> Result<Self, VisionError> {
         let chosen = w.selected.ok_or_else(|| VisionError::Scan {
                 detail: "word observation has no selection".into(),
             })?;
         Ok(Self {
-            corners: w.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
+            corners: w.quad.0.iter().flat_map(|&(x, y)| [x, y]).collect(),
             ranked: w
                 .ranked
                 .iter()
@@ -806,12 +819,14 @@ impl TryFrom<&bitcoin_vision_words::review::ReviewWord> for WordReading {
             original_ocr: w
                 .original
                 .as_ref()
-                .map(|r| OcrObservation {
-                    corners: r.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
-                    crop_png: r.crop_png.clone(),
-                    raw: r.raw.clone(),
+                .map(|r| {
+                    Ok::<_, VisionError>(OcrObservation {
+                        corners: r.quad.0.iter().flat_map(|&(x, y)| [x, y]).collect(),
+                        crop_png: crop_png(&r.quad, photo)?,
+                        raw: r.raw.clone(),
+                    })
                 })
-                ,
+                .transpose()?,
             matching: w.matching.as_ref().map(|m| MatchingEvidence {
                 text: m.text.clone(),
                 original: m.original,
@@ -821,7 +836,7 @@ impl TryFrom<&bitcoin_vision_words::review::ReviewWord> for WordReading {
                 .labels
                 .iter()
                 .map(|l| LabelObservation {
-                    corners: l.quad.iter().flat_map(|&(x, y)| [x, y]).collect(),
+                    corners: l.quad.0.iter().flat_map(|&(x, y)| [x, y]).collect(),
                     literal: l.literal.clone(),
                     origin: l.origin.clone(),
                     ordinal: l.ordinal,
@@ -833,7 +848,7 @@ impl TryFrom<&bitcoin_vision_words::review::ReviewWord> for WordReading {
             stray: w.stray,
             number: w.number,
             apart: w.apart,
-            crop_png: w.crop_png.clone(),
+            crop_png: crop_png(&w.quad, photo)?,
             joined_from: w.joined_from.clone(),
             expanded_from: w
                 .expanded_from
@@ -1121,8 +1136,8 @@ impl PhraseScanner {
         };
         let mut files = Vec::new();
         let scan = progress::complete(Some(&observer), || {
-            let read = self.scan_page(photo, orientation, options, Some(&observer))?;
-            let result = pack_scan(&read)?;
+            let (read, photo) = self.scan_page(photo, orientation, options, Some(&observer))?;
+            let result = pack_scan(&read, &photo)?;
             files = diagnostics::pack(&read, orientation, photo_up)?;
             Ok((result, read.regions))
         })?;
@@ -1160,7 +1175,7 @@ impl PhraseScanner {
         observer.complete(|| {
             // Some(observer) keeps the stage-owned ID mapping even without a
             // foreign callback. It neither selects boxes nor retains readings.
-            let read =
+            let (read, _) =
                 self.scan_page(photo, orientation, ScanOptions::default(), Some(&observer))?;
             read.selected_boxes().map_err(|error| VisionError::Scan {
                 detail: error.to_string(),
@@ -1177,7 +1192,7 @@ impl PhraseScanner {
         use_extent: bool,
     ) -> Result<(PhraseScan, String), VisionError> {
         let _total = timing::span("mobile.total");
-        let read = self.scan_extent(
+        let (read, photo) = self.scan_extent(
             photo,
             use_extent,
             bitcoin_vision_words::extent::Audit::Components,
@@ -1191,7 +1206,7 @@ impl PhraseScanner {
                 value.to_string()
             })
             .unwrap_or_default();
-        Ok((pack_scan(&read)?, report))
+        Ok((pack_scan(&read, &photo)?, report))
     }
 
     /// Same lean E3 arm as normal scans, retaining its compact report for the
@@ -1203,9 +1218,9 @@ impl PhraseScanner {
         use_extent: bool,
     ) -> Result<(PhraseScan, Option<bitcoin_vision_words::extent::Report>), VisionError> {
         let _total = timing::span("mobile.total");
-        let read =
+        let (read, photo) =
             self.scan_extent(photo, use_extent, bitcoin_vision_words::extent::Audit::None)?;
-        let scan = pack_scan(&read)?;
+        let scan = pack_scan(&read, &photo)?;
         let report = read
             .extent
             .map(|r| std::sync::Arc::try_unwrap(r).expect("the result is the report's only owner"));
@@ -1225,8 +1240,8 @@ impl PhraseScanner {
             ..ScanOptions::default()
         };
         progress::complete(observer, || {
-            let read = self.scan_page(photo, orientation, options, observer)?;
-            Ok((pack_scan(&read)?, read.regions))
+            let (read, photo) = self.scan_page(photo, orientation, options, observer)?;
+            Ok((pack_scan(&read, &photo)?, read.regions))
         })
     }
 
@@ -1240,7 +1255,7 @@ impl PhraseScanner {
         orientation: u8,
         options: ScanOptions,
         observer: Option<&dyn Observer>,
-    ) -> Result<ScanResult, VisionError> {
+    ) -> Result<(ScanResult, RgbImage), VisionError> {
         progress::native::work(
             observer,
             progress::native::Phase::Preparing,
@@ -1254,15 +1269,17 @@ impl PhraseScanner {
                 let state = state.clone();
                 threads.spawn(move || progress::forward(&state, observer));
             }
-            scan.run()
+            scan.run_keeping_photo()
         });
         // The record holds the result too; dropping the last view of it
         // leaves the result with one owner, so it is moved rather than copied.
         drop(state);
+        let (outcome, photo) = outcome;
         match outcome {
-            ScanOutcome::Finished(result) => {
-                Ok(Arc::try_unwrap(result).unwrap_or_else(|shared| (*shared).clone()))
-            }
+            ScanOutcome::Finished(result) => Ok((
+                Arc::try_unwrap(result).unwrap_or_else(|shared| (*shared).clone()),
+                photo,
+            )),
             ScanOutcome::Failed(ScanError::Image(detail)) => Err(VisionError::Photo { detail }),
             ScanOutcome::Failed(ScanError::Model(detail)) => Err(VisionError::Model { detail }),
             ScanOutcome::Failed(ScanError::Processing(detail)) => Err(VisionError::Scan { detail }),
@@ -1278,7 +1295,7 @@ impl PhraseScanner {
         photo: Vec<u8>,
         use_extent: bool,
         audit: bitcoin_vision_words::extent::Audit,
-    ) -> Result<ScanResult, VisionError> {
+    ) -> Result<(ScanResult, RgbImage), VisionError> {
         let options = ScanOptions {
             extent: if use_extent {
                 bitcoin_vision_words::Extent::E3(audit)
@@ -1291,10 +1308,8 @@ impl PhraseScanner {
     }
 }
 
-fn pack_scan(scan: &ScanResult) -> Result<PhraseScan, VisionError> {
-    let review = scan.review().map_err(|error| VisionError::Scan {
-        detail: error.to_string(),
-    })?;
+fn pack_scan(scan: &ScanResult, photo: &RgbImage) -> Result<PhraseScan, VisionError> {
+    let review = scan.review();
     let layout = match review.found {
         bitcoin_vision_words::Found::Page => Layout::Page,
         bitcoin_vision_words::Found::Sheet => Layout::WordSheet,
@@ -1302,7 +1317,7 @@ fn pack_scan(scan: &ScanResult) -> Result<PhraseScan, VisionError> {
     let _pack = timing::span("mobile.pack_result");
     let mut words = Vec::with_capacity(review.words.len());
     for w in &review.words {
-        words.push(WordReading::try_from(w)?);
+        words.push(WordReading::pack(w, photo)?);
     }
     let numbering = match &review.numbering {
         bitcoin_vision_words::review::ReviewNumbering::None => Numbering::None,
@@ -1430,6 +1445,10 @@ mod phrase_tests {
     use penlock::share::parse_words as parse_rows;
     use penlock::{Share, ShareIndex};
 
+    fn photo() -> RgbImage {
+        RgbImage::from_fn(100, 100, |x, y| image::Rgb([(x * 2 + y) as u8; 3]))
+    }
+
     fn pack_native_word(word: &bitcoin_vision_words::WordBox) -> WordReading {
         let scan = ScanResult {
             found: bitcoin_vision_words::Found::Page,
@@ -1446,7 +1465,7 @@ mod phrase_tests {
             #[cfg(feature = "extent-experiment")]
             extent: None,
         };
-        WordReading::try_from(&scan.review().unwrap().words[0]).unwrap()
+        WordReading::pack(&scan.review().words[0], &photo()).unwrap()
     }
 
     #[test]
@@ -1530,13 +1549,13 @@ mod phrase_tests {
                 image::load_from_memory(&packed.crop_png)
                     .unwrap()
                     .to_luma8(),
-                word.crop
+                word.quad.crop(&photo())
             );
         }
         // Normal native joins retain their own ABI field, not extent metadata.
         word.expanded_from.clear();
         // An unreadable occupied cell remains one uncertain app entry at its
-        // geometric position, carrying exactly the native box and read pixels.
+        // geometric position, carrying exactly the native box and its pixels.
         word.evidence.cell = Some(bitcoin_vision_words::CellSupport {
             column: Some(0),
             row: Some(5),
@@ -1555,7 +1574,7 @@ mod phrase_tests {
             image::load_from_memory(&cell.crop_png)
                 .unwrap()
                 .to_luma8(),
-            word.crop
+            word.quad.crop(&photo())
         );
         word.evidence.cell = None;
         word.number = None;
@@ -1603,13 +1622,13 @@ mod phrase_tests {
             image::load_from_memory(&original.crop_png)
                 .unwrap()
                 .width(),
-            4
+            30
         );
         assert_eq!(
             image::load_from_memory(&packed.crop_png)
                 .unwrap()
                 .width(),
-            2
+            20
         );
         let matching = packed.matching.unwrap();
         assert_eq!(matching.text, "Hobby");

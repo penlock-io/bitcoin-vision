@@ -532,14 +532,6 @@ pub fn words_of(frame: Frame, ink: &[Vec<bool>], split: Split) -> Vec<Quad> {
     out
 }
 
-/// The word cut level out of the photo: its frame's box, turned
-/// level, as a grey crop with beyond-the-edge as paper. What the word
-/// model reads.
-#[cfg(any(test, feature = "research"))]
-pub fn level_crop(photo: &RgbImage, quad: &Quad) -> GrayImage {
-    level_crop_in(photo, frame_of(quad))
-}
-
 /// Sample an explicitly supplied frame, without choosing another writing axis.
 /// Callers own frame validation, margins and orientation; no photo is rotated.
 pub fn level_crop_in(photo: &RgbImage, frame: Frame) -> GrayImage {

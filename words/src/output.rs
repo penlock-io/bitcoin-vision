@@ -31,7 +31,7 @@ pub struct Observation {
     /// Index into `ScanResult.page.words`, not a printed label or phrase position.
     pub observation: usize,
     /// Final quadrilateral in the normalized image's pixel coordinates.
-    pub quad: [(f32, f32); 4],
+    pub quad: crate::Quad,
     /// Selected spelling; None is never substituted with a fabricated word.
     pub selected: Option<&'static str>,
     /// Whether the native calibration accepted the selected word.
@@ -124,7 +124,7 @@ impl ScanResult {
                             .collect();
                     Observation {
                         observation: i,
-                        quad: w.quad.0,
+                        quad: w.quad,
                         selected: w
                             .pick()
                             .and_then(|p| Word::from_index(p as u16))

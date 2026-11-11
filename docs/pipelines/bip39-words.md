@@ -47,8 +47,8 @@ dropped.
 
 ## What comes out
 
-Ordered words and their photo-coordinate polygons; the exact crop each model
-read; the literal OCR text; every candidate with its probability and, where the
+Ordered words and their photo-coordinate polygons, each of which cuts the crop
+the models read with `quad.crop(&photo)`; the literal OCR text; every candidate with its probability and, where the
 ranking ran, its hybrid score; the branch that selected the word and whether it
 was confirmed; excluded observations with their reasons; and whether the
 assembled phrase's checksum is valid.

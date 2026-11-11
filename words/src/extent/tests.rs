@@ -345,7 +345,7 @@ fn faint_or_broken_support_is_not_repaired_by_threshold_or_morphology_search() {
     let trial = seeds(&layout, &report.sources, &scan).remove(1);
     let mut g = geometry_seed(&trial, &layout, &report.sources, &scan).unwrap();
     paint(&mut photo, 100, 108, 116, 112);
-    let mut ink = binarise(&level_crop(&photo, &g.raster.quad));
+    let mut ink = binarise(&g.raster.quad.crop(&photo));
     // Binary evidence with an explicit break: the geometry must not turn it
     // into a connected stroke, regardless of the grayscale explanation.
     for row in &mut ink[18..22] {

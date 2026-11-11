@@ -53,7 +53,7 @@ fn overlay(photo: &image::RgbImage, scan: &ScanResult) -> image::RgbImage {
         };
         outline(
             &mut annotated,
-            &document.observations[index].quad,
+            &document.observations[index].quad.0,
             scale,
             color,
         );
@@ -80,11 +80,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Refuse an existing directory: examples must not overwrite prior evidence.
     std::fs::create_dir(&output)?;
     std::fs::create_dir(output.join("crops"))?;
-    for (i, word) in scan.review()?.words.iter().enumerate() {
-        std::fs::write(
-            output.join("crops").join(format!("{i}.png")),
-            &word.crop_png,
-        )?;
+    for (i, word) in scan.review().words.iter().enumerate() {
+        word.quad
+            .crop(&photo)
+            .save(output.join("crops").join(format!("{i}.png")))?;
     }
     photo.save(output.join("photo.png"))?;
     preview(&photo).save(output.join("preview.png"))?;
@@ -111,11 +110,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
         let points = observation
             .quad
+            .0
             .iter()
             .map(|(x, y)| format!("{x},{y}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let (x, y) = observation.quad[0];
+        let (x, y) = observation.quad.0[0];
         write!(
             svg,
             "<polygon points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{stroke}\"/><text x=\"{x}\" y=\"{}\" fill=\"{color}\" font-family=\"sans-serif\" font-size=\"{}\">{}: {}</text>",

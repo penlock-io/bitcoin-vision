@@ -64,8 +64,8 @@ pub struct DetectionSource {
     pub union: Option<DetectionUnion>,
 }
 
-fn corners(quad: &[(f32, f32); 4]) -> Vec<f32> {
-    quad.iter().flat_map(|&(x, y)| [x, y]).collect()
+fn corners(quad: &bitcoin_vision_words::Quad) -> Vec<f32> {
+    quad.0.iter().flat_map(|&(x, y)| [x, y]).collect()
 }
 
 pub(crate) fn pack(sources: &[ReviewSource]) -> Vec<DetectionSource> {
@@ -109,13 +109,14 @@ pub(crate) fn pack(sources: &[ReviewSource]) -> Vec<DetectionSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin_vision_words::Quad;
     use bitcoin_vision_words::review::{ReviewOwner, ReviewPart, ReviewUnion};
 
     #[test]
     fn geometry_only_and_rescued_sources_keep_distinct_links_through_packing() {
-        let parent = [(10., 20.), (70., 20.), (70., 40.), (10., 40.)];
-        let tiny = [(71., 25.), (75., 25.), (75., 30.), (71., 30.)];
-        let union = [(10., 20.), (75., 20.), (75., 40.), (10., 40.)];
+        let parent = Quad([(10., 20.), (70., 20.), (70., 40.), (10., 40.)]);
+        let tiny = Quad([(71., 25.), (75., 25.), (75., 30.), (71., 30.)]);
+        let union = Quad([(10., 20.), (75., 20.), (75., 40.), (10., 40.)]);
         let sources = vec![
             ReviewSource {
                 detector_id: 8,

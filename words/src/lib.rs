@@ -140,8 +140,10 @@ pub use scanner::{
     Found, Layout, ModelBytes, PhotoUp, Scan, ScanError, ScanOptions, ScanResult, Scanner,
     WordRegion, Words,
 };
+pub use detect::Quad;
 #[cfg(feature = "research")]
-pub use scanner::{check_dimensions, decode_image};
+pub use scanner::check_dimensions;
+pub use scanner::decode_image;
 #[cfg(feature = "research")]
 pub use split::Frame;
 #[cfg(feature = "research")]

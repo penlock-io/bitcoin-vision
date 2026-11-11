@@ -309,7 +309,7 @@ fn ignored_real_small_mark_stays_in_reader_pixels_and_original_alternatives_rest
         budget.classifier()?;
         budget.ocr()?;
         let mut read = word(quad.clone(), 0);
-        read.crop = level_crop(&photo, &with_margin(quad, CROP_MARGIN));
+        read.crop = with_margin(quad, CROP_MARGIN).crop(&photo);
         assert_eq!(read.crop.get_pixel(36, 1).0, [0]);
         Ok(read)
     })

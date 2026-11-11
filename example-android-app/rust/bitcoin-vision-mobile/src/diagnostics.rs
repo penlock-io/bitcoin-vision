@@ -51,8 +51,12 @@ mod tests {
         }
     }
 
+    fn photo() -> image::RgbImage {
+        image::RgbImage::from_fn(100, 100, |x, y| image::Rgb([(x * 2 + y) as u8; 3]))
+    }
+
     fn pack_native_page(page: &PageScan) -> PhraseScan {
-        crate::pack_scan(&native_result(page, &[])).unwrap()
+        crate::pack_scan(&native_result(page, &[]), &photo()).unwrap()
     }
 
     fn fixture() -> PageScan {
@@ -212,7 +216,7 @@ mod tests {
             image::load_from_memory(&traced.words[0].crop_png)
                 .unwrap()
                 .to_luma8(),
-            scan.words[0].crop
+            scan.words[0].quad.crop(&photo())
         );
     }
 

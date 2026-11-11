@@ -91,8 +91,7 @@ cargo run --release -p penlock-scan --features bundled-models,print --example sc
 ## BIP39 word lists
 
 A phrase written out by hand, photographed, turned back into ordered words with
-the evidence for each: the polygon it was read from, the exact crop both models
-saw, the literal OCR text, a probability for every one of the 2048 words, the
+the evidence for each: the polygon it was read from, the literal OCR text, a probability for every one of the 2048 words, the
 branch that chose, and whether the assembled phrase checksums.
 
 <p align="center">
@@ -129,13 +128,16 @@ use bitcoin_vision::words::{Scanner, ScanOptions};
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let scanner = Scanner::bundled()?; // load once, reuse for multiple images
-let photo = std::fs::read("handwritten-words.jpg")?;
-let result = scanner.scan(&photo, ScanOptions::default())?;
+let bytes = std::fs::read("handwritten-words.jpg")?;
+// Decoded once here, so each word's picture can be cut from the same image.
+let photo = bitcoin_vision::words::decode_image(&bytes, None)?;
+let result = scanner.scan_rgb(&photo, ScanOptions::default())?;
 let document = result.document();
 
 for &index in &document.ordered_observations {
     let word = &document.observations[index];
     // word.selected, word.quad, word.candidates and word.selection
+    let picture = word.quad.crop(&photo); // the word as the models read it
     // Do not log wallet phrases in production.
 }
 # Ok(())
@@ -190,8 +192,9 @@ nothing; a null score is an unscored candidate, not a zero.
 ## Coordinates and decisions
 
 Polygons refer to the canonical image after EXIF orientation is applied once,
-and `bitcoin_vision_core::decode_image` hands back that same frame for display. The final polygon is
-the crop both models read, with no added padding. Every classifier candidate is
+and `decode_image` hands back that same frame for display. The final polygon is
+the crop both models read, with no added padding, and `quad.crop(&photo)` cuts
+that picture; the output itself carries no image bytes. Every classifier candidate is
 retained, `probability` is a model probability and `hybrid_score` is not one,
 and checksum validity never selects a reading order. `document()` projects
 decisions already made rather than running anything again; `diagnostics: true`

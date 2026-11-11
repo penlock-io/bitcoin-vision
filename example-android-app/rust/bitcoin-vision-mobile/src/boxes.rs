@@ -38,7 +38,7 @@ impl From<ReviewBoxes> for BoxScan {
                 .into_iter()
                 .map(|b| FinalBox {
                     id: b.id,
-                    corners: b.quad.into_iter().flat_map(|(x, y)| [x, y]).collect(),
+                    corners: b.quad.0.into_iter().flat_map(|(x, y)| [x, y]).collect(),
                 })
                 .collect(),
         }
@@ -241,7 +241,7 @@ mod tests {
             height: 80,
             boxes: vec![bitcoin_vision_words::review::ReviewBox {
                 id: 7,
-                quad: [(1.25, 2.5), (30., 1.), (32., 12.), (2., 13.)],
+                quad: bitcoin_vision_words::Quad([(1.25, 2.5), (30., 1.), (32., 12.), (2., 13.)]),
             }],
         }
     }
