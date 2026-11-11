@@ -137,7 +137,7 @@ let document = result.document();
 for &index in &document.ordered_observations {
     let word = &document.observations[index];
     // word.selected, word.quad, word.candidates and word.selection
-    let picture = word.quad.crop(&photo); // the word as the models read it
+    let picture = word.quad.crop(&photo); // the word's picture, for a person to check
     // Do not log wallet phrases in production.
 }
 # Ok(())
@@ -178,7 +178,7 @@ cargo run --release -p bitcoin-vision-words --features bundled-models --example 
 
 The example writes a metadata-free canonical `photo.png`, self-contained
 `overlay.svg` with numbered words, display-only `preview.png` and `overlay.png`,
-exact recognition `crops/` and structured `result.json`. It refuses to overwrite
+each word's `crops/` picture and structured `result.json`. It refuses to overwrite
 an existing output directory. The two PNG previews reproduce the README images.
 Replace the input path to scan your own image; no private research corpus is needed.
 
@@ -193,8 +193,11 @@ nothing; a null score is an unscored candidate, not a zero.
 
 Polygons refer to the canonical image after EXIF orientation is applied once,
 and `decode_image` hands back that same frame for display. The final polygon is
-the crop both models read, with no added padding, and `quad.crop(&photo)` cuts
-that picture; the output itself carries no image bytes. Every classifier candidate is
+the area both models read, with no added padding. The output carries no image
+bytes: `quad.crop(&photo)` cuts the word's picture for a person to compare with
+the reading. That picture is a reconstruction, not the models' own input. It
+can differ from it in a few pixels, so do not rely on it to reproduce a
+reading. Every classifier candidate is
 retained, `probability` is a model probability and `hybrid_score` is not one,
 and checksum validity never selects a reading order. `document()` projects
 decisions already made rather than running anything again; `diagnostics: true`
@@ -218,7 +221,7 @@ English BIP39 is the only vocabulary here; this is not generic handwriting OCR.
 Low contrast, ambiguous letters, unusual layouts and missing strokes all cause
 mistakes.
 
-Photographs, exact crops and JSON results can hold the entire secret, and
+Photographs, word crops and JSON results can hold the entire secret, and
 callers own their storage and deletion. Nothing is logged, nothing is uploaded,
 and no wallet is created, restored or contacted by these crates.
 

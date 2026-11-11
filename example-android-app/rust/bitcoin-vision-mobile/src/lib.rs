@@ -707,7 +707,7 @@ pub struct ExtentParent {
 pub struct OcrObservation {
     /// Original photo polygon.
     pub corners: Vec<f32>,
-    /// Exact crop supplied to OCR.
+    /// The polygon's picture, cut from the photo. Not OCR's own input.
     pub crop_png: Vec<u8>,
     /// Verbatim OCR of that crop.
     pub raw: String,
@@ -773,8 +773,8 @@ pub struct WordReading {
     /// A word by its read, but far from the phrase's region: a stray
     /// for that reason, not for what it read as.
     pub apart: bool,
-    /// The level crop the model read, as PNG bytes, for the person to
-    /// compare the reading against.
+    /// The word's picture as PNG bytes, cut level from the photo, for the
+    /// person to compare the reading against. Not the model's own input.
     pub crop_png: Vec<u8>,
     /// Original pieces replaced by this joined word, indexed into the page.
     /// Restoring those pieces must deactivate this word, and vice versa.
@@ -1555,7 +1555,7 @@ mod phrase_tests {
         // Normal native joins retain their own ABI field, not extent metadata.
         word.expanded_from.clear();
         // An unreadable occupied cell remains one uncertain app entry at its
-        // geometric position, carrying exactly the native box and its pixels.
+        // geometric position, carrying the native box and its picture.
         word.evidence.cell = Some(bitcoin_vision_words::CellSupport {
             column: Some(0),
             row: Some(5),

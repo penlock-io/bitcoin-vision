@@ -25,7 +25,7 @@ pub struct Candidate {
     pub edit_cost: Option<f32>,
 }
 
-/// One observed region; native observations also retain the exact crop pixels.
+/// One observed region. It carries no pixels; `quad` locates it in the photo.
 #[derive(Debug, Serialize)]
 pub struct Observation {
     /// Index into `ScanResult.page.words`, not a printed label or phrase position.

@@ -48,10 +48,11 @@ pub struct ReviewPage {
     pub sources: Vec<ReviewSource>,
 }
 
-/// One observed word and its exact model crop.
+/// One observed word.
 #[derive(Clone, Debug)]
 pub struct ReviewWord {
-    /// Where the word is in the photo. [`Quad::crop`] cuts its picture.
+    /// Where the word is in the photo. [`Quad::crop`] cuts a picture of it,
+    /// which is not the models' own input.
     pub quad: Quad,
     /// The five saved classifier candidates in model rank order.
     pub ranked: Vec<(&'static str, f32)>,
@@ -90,7 +91,7 @@ pub struct ReviewParent {
     pub stray: bool,
 }
 
-/// The exact OCR crop retained before an adopted narrowing.
+/// Where OCR read before an adopted narrowing, and what it read there.
 #[derive(Clone, Debug)]
 pub struct ReviewOriginal {
     /// Original corners in canonical photo pixels.

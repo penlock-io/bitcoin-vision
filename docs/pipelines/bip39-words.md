@@ -21,7 +21,7 @@ but never across writing, and marks cannot invent a label column on a page
 whose numbers were never read. Reading order comes from that geometry. A
 checksum never chooses an order — it is an output, not permission to reorder.
 
-**Cut once.** The final polygon is the crop both models read: no padding, no
+**Cut once.** The final polygon is the area both models read: no padding, no
 second opinion about where the word was.
 
 **Read it two ways.** `text-recogniser.onnx` gives a literal OCR read of the
@@ -47,8 +47,9 @@ dropped.
 
 ## What comes out
 
-Ordered words and their photo-coordinate polygons, each of which cuts the crop
-the models read with `quad.crop(&photo)`; the literal OCR text; every candidate with its probability and, where the
+Ordered words and their photo-coordinate polygons, and no image bytes:
+`quad.crop(&photo)` cuts a word's picture for a person to check, a near copy of
+the models' input and not that input itself; the literal OCR text; every candidate with its probability and, where the
 ranking ran, its hybrid score; the branch that selected the word and whether it
 was confirmed; excluded observations with their reasons; and whether the
 assembled phrase's checksum is valid.

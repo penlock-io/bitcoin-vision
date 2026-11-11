@@ -44,8 +44,9 @@ impl Quad {
     /// The picture of what the quad encloses: its minimum rotated rectangle,
     /// turned level, in grey. Anything beyond the photo's edge is paper.
     ///
-    /// For a word's final quad this is the crop the models read, to within
-    /// a few pixels at its corners.
+    /// For a word's quad this is a picture for a person to compare with the
+    /// reading. It reconstructs what the models were given and can differ
+    /// from it in a few pixels, so it does not reproduce a reading.
     ///
     /// `photo` is the image the quad was found in, as decoded by
     /// [`decode_image`](crate::decode_image).
