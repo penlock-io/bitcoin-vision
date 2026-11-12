@@ -1,0 +1,99 @@
+# XcodeGen spec: `xcodegen generate` writes BitcoinVision.xcodeproj, which is
+# not checked in. See README.md.
+name: BitcoinVision
+options:
+  bundleIdPrefix: com.bitcoinvision
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  BitcoinVision:
+    type: application
+    platform: iOS
+    sources:
+      - path: BitcoinVision
+      - path: build/generated/bitcoin_vision_mobile.swift
+        optional: true
+        createIntermediateGroups: false
+      - path: build/Resources/models
+        type: folder
+        buildPhase: resources
+        optional: true
+      - path: build/Resources/licenses
+        type: folder
+        buildPhase: resources
+        optional: true
+      - path: build/Resources/fonts/IBMPlexMono-Regular.ttf
+        buildPhase: resources
+        optional: true
+      - path: build/Resources/fonts/IBMPlexSans-Variable.ttf
+        buildPhase: resources
+        optional: true
+    dependencies:
+      - framework: build/BitcoinVisionMobile.xcframework
+        embed: false
+    preBuildScripts:
+      # Like Gradle's preBuild: the native library, bindings and assets are
+      # rebuilt (incrementally) before Swift compiles against them.
+      - name: Rust bridge
+        basedOnDependencyAnalysis: false
+        script: |
+          # SKIP_RUST_BUILD=1 reuses whatever build-rust.sh last produced.
+          if [ "${SKIP_RUST_BUILD:-}" = 1 ]; then exit 0; fi
+          if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then which=simulator; else which=device; fi
+          "$SRCROOT/build-rust.sh" "$which"
+    info:
+      path: BitcoinVision/Info.plist
+      properties:
+        CFBundleDisplayName: Bitcoin Vision
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiredDeviceCapabilities: [arm64, still-camera]
+        NSCameraUsageDescription: The camera photographs a written phrase, Penlock share strips, or a transaction QR code.
+        UIAppFonts: [IBMPlexMono-Regular.ttf, IBMPlexSans-Variable.ttf]
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Partially signed Bitcoin transaction
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.bitcoin.psbt, public.data]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.bitcoin.psbt
+            UTTypeDescription: Partially signed Bitcoin transaction
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [psbt]
+              public.mime-type: [application/x-psbt]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bitcoinvision.example
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        OTHER_LDFLAGS: [-lc++]
+  BitcoinVisionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [BitcoinVisionTests]
+    dependencies:
+      - target: BitcoinVision
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+schemes:
+  BitcoinVision:
+    build:
+      targets:
+        BitcoinVision: all
+        BitcoinVisionTests: [test]
+    test:
+      targets: [BitcoinVisionTests]
