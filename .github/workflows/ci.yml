@@ -25,7 +25,7 @@ jobs:
       - name: The word pipeline's example
         run: cargo +stable test --locked -p bitcoin-vision-words --features bundled-models --example scan
       - name: The Penlock pipeline's example
-        run: cargo +stable test --locked -p penlock-scan --features bundled-models --example scan
+        run: cargo +stable test --locked -p penlock-scan --features bundled-models,print --example scan
       - name: No-runtime API
         run: cargo +stable check --locked -p bitcoin-vision-words --no-default-features
       # The facade forwards its switches without turning a pipeline on, so
