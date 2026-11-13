@@ -40,8 +40,11 @@ cd "$stage"
 cargo package --locked --workspace
 cd target/package
 for crate in *.crate; do
+    # The listing is taken whole first: under pipefail, a `grep -q` that leaves
+    # at its first match closes the pipe on tar, and tar's failure reads as a miss.
+    listing=$(tar tzf "$crate")
     for licence in LICENSE LICENSE-APACHE; do
-        tar tzf "$crate" | grep -qx "${crate%.crate}/$licence" || die "$crate does not carry $licence"
+        grep -qx "${crate%.crate}/$licence" <<<"$listing" || die "$crate does not carry $licence"
     done
     tar xzf "$crate"
 done
