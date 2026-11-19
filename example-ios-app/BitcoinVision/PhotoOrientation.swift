@@ -98,7 +98,13 @@ struct WithPhotoBitmap<Content: View>: View {
         @State private var bitmap: CGImage?
 
         var body: some View {
-            content(bitmap).task {
+            // Before the decode the content is usually empty, and an empty
+            // view never appears, so the task hangs off a view that always does.
+            ZStack {
+                Color.clear.frame(maxWidth: .infinity).frame(height: 0)
+                content(bitmap)
+            }
+            .task {
                 guard let photo else { return }
                 let decoded = await loadPhotoBitmap(photo)
                 if !Task.isCancelled { bitmap = decoded }
