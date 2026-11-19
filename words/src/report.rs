@@ -51,9 +51,6 @@ impl ScanResult {
         }).collect::<Vec<_>>();
         let mut numbering = match &scan.numbering {
             crate::numbering::Numbering::None => json!({"state":"none"}),
-            crate::numbering::Numbering::Inconsistent { detail } => {
-                json!({"state":"inconsistent","detail":detail})
-            }
             crate::numbering::Numbering::Held {
                 count,
                 missing,

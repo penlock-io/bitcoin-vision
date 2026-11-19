@@ -354,10 +354,6 @@ final class PhraseDraftTests: XCTestCase {
             "Numbers 5, 6 are not where the page puts them: check the order. A number beside 1 word could not be read.",
             numberingNote(numbers: .held(count: 12, missing: [], outOfPlace: [5, 6], unresolved: 1))
         )
-        XCTAssertEqual(
-            "The numbers on the page contradict each other, so the words are in the order they sit on the page.",
-            numberingNote(numbers: .inconsistent(detail: "two boxes are numbered 4"))
-        )
         XCTAssertEqual("11 words: words 4 and 7 were not found",
                        phraseStatus(count: 11, passes: false,
                                     numbers: .held(count: 12, missing: [4, 7], outOfPlace: [], unresolved: 0)))

@@ -71,7 +71,7 @@ stage! {
 pub enum ListMode {
     /// Neither positive dotted evidence nor a recognized sequence.
     Unnumbered,
-    /// Positive dotted evidence, a held sequence, or contradictory numbers.
+    /// Positive dotted evidence or a held sequence.
     Numbered,
 }
 
@@ -247,13 +247,9 @@ mod tests {
             out_of_place: vec![],
             unresolved: vec![],
         };
-        let inconsistent = Numbering::Inconsistent {
-            detail: "duplicate".into(),
-        };
         for (sequence, held_expected, repair_expected) in [
             (Numbering::None, false, true),
             (held, true, false),
-            (inconsistent, false, false),
         ] {
             for dotted in [false, true] {
                 let mode = ListMode::from_evidence(dotted, &sequence);

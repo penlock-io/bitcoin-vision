@@ -13,8 +13,6 @@ sealed interface Numbers {
      * be placed in the run.
      */
     data class Held(val count: Int, val missing: List<Int>, val outOfPlace: List<Int>, val unresolved: Int) : Numbers
-
-    data class Inconsistent(val detail: String) : Numbers
 }
 
 /** Original keep state before an extent expansion hid this observation. */
@@ -331,8 +329,6 @@ fun phraseStatus(count: Int, passes: Boolean, numbers: Numbers = Numbers.None, t
  * order; nothing when they were read as a complete run or not at all. */
 fun numberingNote(numbers: Numbers, listNumbered: Boolean = numbers != Numbers.None): String? = when (numbers) {
     Numbers.None -> if (listNumbered) "Numbered list detected. Some numbers could not be resolved; check the reading order." else null
-    is Numbers.Inconsistent ->
-        "The numbers on the page contradict each other, so the words are in the order they sit on the page."
     is Numbers.Held -> listOfNotNull(
         numbers.outOfPlace.takeIf { it.isNotEmpty() }?.let {
             "${if (it.size == 1) "Number" else "Numbers"} ${it.joinToString(", ")} ${if (it.size == 1) "is" else "are"} not where the page puts ${if (it.size == 1) "it" else "them"}: check the order."

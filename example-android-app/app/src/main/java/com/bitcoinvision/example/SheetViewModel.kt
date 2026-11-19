@@ -311,7 +311,6 @@ class SheetViewModel(app: Application) : AndroidViewModel(app) {
             is Numbering.Held -> Numbers.Held(
                 n.count.toInt(), n.missing.map { it.toInt() }, n.outOfPlace.map { it.toInt() }, n.unresolved.size,
             )
-            is Numbering.Inconsistent -> Numbers.Inconsistent(n.detail)
             is Numbering.None -> Numbers.None
         }
         return PhraseDraft(

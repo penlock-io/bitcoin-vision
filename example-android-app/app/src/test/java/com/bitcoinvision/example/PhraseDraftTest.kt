@@ -374,10 +374,6 @@ class PhraseDraftTest {
             "Numbers 5, 6 are not where the page puts them: check the order. A number beside 1 word could not be read.",
             numberingNote(Numbers.Held(12, emptyList(), listOf(5, 6), 1)),
         )
-        assertEquals(
-            "The numbers on the page contradict each other, so the words are in the order they sit on the page.",
-            numberingNote(Numbers.Inconsistent("two boxes are numbered 4")),
-        )
         assertEquals("11 words: words 4 and 7 were not found", phraseStatus(11, false, Numbers.Held(12, listOf(4, 7), emptyList(), 0)))
         assertEquals("12 words · checksum passes", phraseStatus(12, true, Numbers.Held(12, emptyList(), emptyList(), 0)))
     }

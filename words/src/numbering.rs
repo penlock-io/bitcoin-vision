@@ -171,11 +171,6 @@ pub enum Numbering {
         /// where the run has no hole for it.
         unresolved: Vec<usize>,
     },
-    /// The labels contradict one another, so no number is trusted.
-    Inconsistent {
-        /// What contradicted what.
-        detail: String,
-    },
 }
 
 impl Numbering {
@@ -184,8 +179,8 @@ impl Numbering {
         matches!(self, Self::Held { .. })
     }
 
-    /// The existing page-wide join/E3 guard. Contradictory sequences remain
-    /// protected too; an independent list-mode signal must not change this.
+    /// The existing page-wide join/E3 guard; an independent list-mode signal
+    /// must not change this.
     pub fn permits_word_repair(&self) -> bool {
         matches!(self, Self::None)
     }
@@ -204,9 +199,11 @@ stage! {
     /// — so what the region or the keep rule left out cannot reach the
     /// numbering by its label. The order with fewer inversions
     /// among the exact numbers is the page's, and the longest rising run
-    /// through them must reach [`MIN_RUN`], or the page is not numbered
-    /// (too few numbers) or its numbers contradict one another (enough
-    /// numbers, out of order). Every exact number is reserved, in place
+    /// through them must reach [`MIN_RUN`] and hold three quarters of
+    /// them, or the page is not numbered as one list.
+    /// A misread number costs only its own box: one too high for the
+    /// page, or a second box off the run with a number already taken,
+    /// takes no number. Every other exact number is reserved, in place
     /// or not; the holes left between two numbers in place go to the
     /// boxes between them when they are exactly as many, and a shaped
     /// label directly after the last number in place continues the run.
@@ -218,40 +215,20 @@ stage! {
             .map(|(i, l)| if placed.contains(&i) { *l } else { None })
             .collect();
         let labels = labels.as_slice();
-        let exact: Vec<(usize, u32)> = labels
+        // a number no page of this size could carry is a misread, and
+        // costs only its own box
+        let limit = 2 * labels.len().max(12);
+        let mut numbers: Vec<Option<u32>> = labels
             .iter()
-            .enumerate()
-            .filter_map(|(i, l)| match l {
-                Some(Label::Exact(n)) => Some((i, *n)),
+            .map(|l| match l {
+                Some(Label::Exact(n)) if *n as usize <= limit => Some(*n),
                 _ => None,
             })
             .collect();
-        if exact.len() < MIN_RUN {
+        if numbers.iter().flatten().count() < MIN_RUN {
             return Numbering::None;
         }
-        let mut seen = HashMap::new();
-        for &(i, n) in &exact {
-            if let Some(first) = seen.insert(n, i) {
-                return Numbering::Inconsistent {
-                    detail: format!("two boxes are numbered {n} (boxes {first} and {i})"),
-                };
-            }
-        }
-        let highest = exact.iter().map(|&(_, n)| n).max().unwrap_or(0);
-        if highest as usize > 2 * labels.len().max(12) {
-            return Numbering::Inconsistent {
-                detail: format!("numbered up to {highest} with {} boxes", labels.len()),
-            };
-        }
-        let values_in = |order: &[usize]| -> Vec<u32> {
-            order
-                .iter()
-                .filter_map(|&i| match labels[i] {
-                    Some(Label::Exact(n)) => Some(n),
-                    _ => None,
-                })
-                .collect()
-        };
+        let values_in = |order: &[usize]| -> Vec<u32> { order.iter().filter_map(|&i| numbers[i]).collect() };
         let inversions = |values: &[u32]| {
             (0..values.len())
                 .flat_map(|a| (a + 1..values.len()).map(move |b| (a, b)))
@@ -263,13 +240,6 @@ stage! {
         } else {
             columns.to_vec()
         };
-        let mut numbers: Vec<Option<u32>> = labels
-            .iter()
-            .map(|l| match l {
-                Some(Label::Exact(n)) => Some(*n),
-                _ => None,
-            })
-            .collect();
 
         // the exact numbers in reading order; a number that breaks the
         // longest rising run through them is out of place
@@ -278,22 +248,31 @@ stage! {
             .filter_map(|&i| numbers[i].map(|n| (i, n)))
             .collect();
         let rising = longest_rising(&placed.iter().map(|&(_, n)| n).collect::<Vec<_>>());
-        if rising.len() < MIN_RUN {
-            return Numbering::Inconsistent {
-                detail: format!(
-                    "{} numbers read but only {} of them in order",
-                    exact.len(),
-                    rising.len()
-                ),
-            };
+        // misreads are the odd number off the run; when the run leaves out
+        // more than a quarter of what was read, the page is not one list
+        if rising.len() < MIN_RUN || 4 * rising.len() < 3 * placed.len() {
+            return Numbering::None;
         }
-        let out_of_place: Vec<u32> = placed
-            .iter()
-            .enumerate()
-            .filter(|(k, _)| !rising.contains(k))
-            .map(|(_, &(_, n))| n)
-            .collect();
-        let reserved: HashSet<u32> = exact.iter().map(|&(_, n)| n).collect();
+        // a run holds a number once, so a second box off the run with a
+        // number already taken is a misread; a number seen once and off
+        // the run is out of place, and keeps its number
+        let mut seen: HashMap<u32, usize> = HashMap::new();
+        for &(_, n) in &placed {
+            *seen.entry(n).or_default() += 1;
+        }
+        let mut out_of_place = Vec::new();
+        for (k, &(i, n)) in placed.iter().enumerate() {
+            if rising.contains(&k) {
+                continue;
+            }
+            if seen[&n] > 1 {
+                numbers[i] = None;
+            } else {
+                out_of_place.push(n);
+            }
+        }
+        let reserved: HashSet<u32> = numbers.iter().flatten().copied().collect();
+        let highest = reserved.iter().copied().max().unwrap_or(0);
 
         // the holes between each pair of numbers in place, and before the
         // first, less any number carried elsewhere on the page: filled by
@@ -309,6 +288,7 @@ stage! {
             let ((a, na), (b, nb)) = (pair[0], pair[1]);
             spans.push((position[&a] + 1, position[&b], na, nb));
         }
+        let mut carried = reserved.clone();
         for (from, to, na, nb) in spans {
             let holes: Vec<u32> = (na + 1..nb).filter(|n| !reserved.contains(n)).collect();
             let between: Vec<usize> = order[from..to]
@@ -316,9 +296,10 @@ stage! {
                 .copied()
                 .filter(|&i| numbers[i].is_none())
                 .collect();
-            if !holes.is_empty() && between.len() == holes.len() {
+            if !holes.is_empty() && between.len() == holes.len() && holes.iter().all(|n| !carried.contains(n)) {
                 for (&i, &n) in between.iter().zip(&holes) {
                     numbers[i] = Some(n);
+                    carried.insert(n);
                 }
             }
         }
@@ -329,22 +310,12 @@ stage! {
         let mut count = last.max(highest);
         if let Some(&(last_box, _)) = anchors.last() {
             for (next, &i) in (last + 1..).zip(&order[position[&last_box] + 1..]) {
-                if numbers[i].is_some() || labels[i] != Some(Label::Shaped) || reserved.contains(&next)
-                {
+                if numbers[i].is_some() || labels[i] != Some(Label::Shaped) || carried.contains(&next) {
                     break;
                 }
                 numbers[i] = Some(next);
+                carried.insert(next);
                 count = count.max(next);
-            }
-        }
-        let mut carried = HashSet::new();
-        for (i, n) in numbers.iter().enumerate() {
-            if let Some(n) = n
-                && !carried.insert(*n)
-            {
-                return Numbering::Inconsistent {
-                    detail: format!("box {i} would be numbered {n} twice over"),
-                };
             }
         }
         let missing: Vec<u32> = (1..=count).filter(|n| !carried.contains(n)).collect();
@@ -583,20 +554,40 @@ mod tests {
     }
 
     #[test]
-    fn duplicates_and_numbers_out_of_order_are_inconsistent_and_too_few_are_none() {
+    fn a_misread_duplicate_costs_only_its_own_box_and_the_run_fills_it_back() {
+        // 1..12 with box 9's 10 misread as 5: the 5 off the run is the misread
         let mut labels: Vec<Option<Label>> = (1..=12).map(exact).collect();
         labels[9] = exact(5);
         let order = straight(12);
-        assert!(matches!(
-            fit(&labels, &order, &order),
-            Numbering::Inconsistent { .. }
-        ));
+        let h = held(fit(&labels, &order, &order));
+        assert_eq!(h.numbers, (1..=12).map(Some).collect::<Vec<_>>());
+        assert!(h.out_of_place.is_empty() && h.missing.is_empty() && h.unresolved.is_empty());
+    }
+
+    #[test]
+    fn a_number_too_high_for_the_page_is_dropped_and_the_rest_stand() {
+        let mut labels: Vec<Option<Label>> = (1..=12).map(exact).collect();
+        labels[4] = exact(60);
+        let order = straight(12);
+        let h = held(fit(&labels, &order, &order));
+        assert_eq!(h.numbers[4], Some(5));
+        assert_eq!(h.count, 12);
+    }
+
+    #[test]
+    fn two_lists_numbered_alike_are_not_one_run() {
+        // three columns, each numbered 1..12: no single run holds them
+        let labels: Vec<Option<Label>> = (0..3).flat_map(|_| (1..=12).map(exact)).collect();
+        let order = straight(36);
+        assert_eq!(fit(&labels, &order, &order), Numbering::None);
+    }
+
+    #[test]
+    fn too_few_numbers_in_order_are_no_numbering_at_all() {
+        let order = straight(12);
         // eight numbers, but written backwards: no run to trust
         let backwards: Vec<Option<Label>> = (1..=8).rev().map(exact).chain([None; 4]).collect();
-        assert!(matches!(
-            fit(&backwards, &order, &order),
-            Numbering::Inconsistent { .. }
-        ));
+        assert_eq!(fit(&backwards, &order, &order), Numbering::None);
         let few: Vec<Option<Label>> = (1..=7).map(exact).chain([None; 5]).collect();
         assert_eq!(fit(&few, &order, &order), Numbering::None);
         let none: Vec<Option<Label>> = vec![None; 12];
@@ -605,10 +596,7 @@ mod tests {
             .map(exact)
             .chain([exact(60), None, None, None, None])
             .collect();
-        assert!(matches!(
-            fit(&far, &order, &order),
-            Numbering::Inconsistent { .. }
-        ));
+        assert_eq!(fit(&far, &order, &order), Numbering::None);
     }
 
     #[test]

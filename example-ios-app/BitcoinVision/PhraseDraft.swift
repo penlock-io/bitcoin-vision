@@ -18,8 +18,6 @@ enum Numbers: Equatable {
      * be placed in the run.
      */
     case held(count: Int, missing: [Int], outOfPlace: [Int], unresolved: Int)
-
-    case inconsistent(detail: String)
 }
 
 /** Original keep state before an extent expansion hid this observation. */
@@ -468,8 +466,6 @@ func numberingNote(numbers: Numbers, listNumbered: Bool? = nil) -> String? {
     case .none:
         return (listNumbered ?? false)
             ? "Numbered list detected. Some numbers could not be resolved; check the reading order." : nil
-    case .inconsistent:
-        return "The numbers on the page contradict each other, so the words are in the order they sit on the page."
     case let .held(_, _, outOfPlace, unresolved):
         var parts: [String] = []
         if !outOfPlace.isEmpty {

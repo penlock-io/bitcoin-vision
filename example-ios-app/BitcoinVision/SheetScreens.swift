@@ -395,10 +395,9 @@ struct ReviewScreen: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("order")
                 if let note = numberingNote(numbers: draft.numbers, listNumbered: draft.listNumbered) {
-                    let inconsistent: Bool = { if case .inconsistent = draft.numbers { return true } else { return false } }()
                     Text(note)
                         .font(.bodyMedium)
-                        .foregroundStyle(inconsistent ? Palette.error : Palette.onSurfaceVariant)
+                        .foregroundStyle(Palette.onSurfaceVariant)
                         .accessibilityIdentifier("numbering")
                 }
             }

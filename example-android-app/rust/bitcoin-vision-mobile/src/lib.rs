@@ -905,11 +905,6 @@ pub enum Numbering {
         /// number to.
         unresolved: Vec<u32>,
     },
-    /// The numbers contradict one another, so none is trusted.
-    Inconsistent {
-        /// What contradicted what.
-        detail: String,
-    },
 }
 
 /// How a photo was read.
@@ -1355,11 +1350,6 @@ fn pack_scan(scan: &ScanResult, photo: &RgbImage) -> Result<PhraseScan, VisionEr
             out_of_place: out_of_place.clone(),
             unresolved: unresolved.clone(),
         },
-        bitcoin_vision_words::review::ReviewNumbering::Inconsistent { detail } => {
-            Numbering::Inconsistent {
-                detail: detail.clone(),
-            }
-        }
     };
     Ok(PhraseScan {
         list_numbered: review.list_numbered,

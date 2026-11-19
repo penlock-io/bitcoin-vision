@@ -451,9 +451,7 @@ fun ReviewScreen(
                             Text(
                                 note,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (draft.numbers is Numbers.Inconsistent) FontWeight.Bold else null,
-                                color = if (draft.numbers is Numbers.Inconsistent) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.testTag("numbering"),
                             )
                         }

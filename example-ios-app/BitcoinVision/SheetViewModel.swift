@@ -371,8 +371,6 @@ final class SheetViewModel {
         case let .held(count, missing, outOfPlace, unresolved):
             numbers = .held(count: Int(count), missing: missing.map { Int($0) }, outOfPlace: outOfPlace.map { Int($0) },
                             unresolved: unresolved.count)
-        case let .inconsistent(detail):
-            numbers = .inconsistent(detail: detail)
         case .none:
             numbers = .none
         }

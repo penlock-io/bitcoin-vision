@@ -139,7 +139,7 @@ pub struct ReviewLabel {
 pub enum ReviewNumbering {
     /// Too little evidence for a trusted sequence.
     None,
-    /// A trusted numbered run with its gaps and contradictions.
+    /// A trusted numbered run with its gaps and misreads.
     Held {
         /// Highest number in the run.
         count: u32,
@@ -149,11 +149,6 @@ pub enum ReviewNumbering {
         out_of_place: Vec<u32>,
         /// Observations with labels not assigned a run number.
         unresolved: Vec<u32>,
-    },
-    /// Enough observations to establish that the labels conflict.
-    Inconsistent {
-        /// Stable explanation of the conflict.
-        detail: String,
     },
 }
 
@@ -278,9 +273,6 @@ impl ScanResult {
                 missing: missing.clone(),
                 out_of_place: out_of_place.clone(),
                 unresolved: unresolved.iter().map(|&i| i as u32).collect(),
-            },
-            Numbering::Inconsistent { detail } => ReviewNumbering::Inconsistent {
-                detail: detail.clone(),
             },
         };
         ReviewPage {
